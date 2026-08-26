@@ -1,8 +1,9 @@
 # pocket-id-akka
 
-Issues and checks OpenID Connect identity for an application through the
-authorization-code sign-in flow — the same decision an identity provider makes
-before it hands an application a token.
+A full identity provider: OpenID Connect (authorization-code, refresh, client-credentials,
+and device grants; PAR; introspection; RP-initiated logout), WebAuthn passkey sign-in, and
+the user, group, client, API-key, audit-log, and configuration management an operator drives
+through the same web UI pocket-id ships.
 
 A port of [pocket-id/pocket-id](https://github.com/pocket-id/pocket-id) onto
 **Akka**, built with **Akka Specify**.
@@ -11,15 +12,18 @@ A port of [pocket-id/pocket-id](https://github.com/pocket-id/pocket-id) onto
 
 ## Where it came from
 
-pocket-id/pocket-id is an OpenID Connect Certified identity provider that lets
-people sign in to other applications using a passkey instead of a password. It was
-ported to derive a specification format precise enough to regenerate a system on a
-different stack — the port is the vehicle, the specification is the deliverable.
+pocket-id/pocket-id is an OpenID Connect Certified identity provider that lets people sign in
+to other applications using a passkey instead of a password. It was ported to derive a
+specification format precise enough to regenerate a system on a different stack — the port is
+the vehicle, the specification is the deliverable.
 
-Only one part of pocket-id is rebuilt here: the certified sign-in protocol itself —
-discovery, the signing keys, the authorization step, the token exchange, and the
-endpoint an application calls to read back who signed in. The specifications the
-port was generated from are in
+**This is the whole system, less native mobile clients, third-party chat-platform
+integrations, and pocket-id's S3 backend/CIMD/rate-limit-policy/backup-format specifics,
+which needed something this environment does not have (a real S3 target, a hosted CIMD
+document, a licensed geo-IP database) to check by running rather than guessing** — the full
+reasoning is in `pocket-id-port/specs/SPEC-001-pocket-id.md` §1. An earlier session ported
+only the certified OIDC authorization-code core; this one supersedes that scope. The
+specifications the port was generated from are in
 [TylerJewell/akka-specify-harness](https://github.com/TylerJewell/akka-specify-harness)
 under `pocket-id-port/`.
 
@@ -27,75 +31,59 @@ under `pocket-id-port/`.
 
 ## pocket-id/pocket-id → this port
 
-📉 909 Go lines (the files implementing this slice) → **651 Java lines**<br>
-📁 9 files → **12 files**<br>
-🧪 0 tests broken on purpose → **17 tests, 5 rules re-checked against the running original**<br>
-⚡ 251.4 milliseconds → **250.5 milliseconds** per discovery-document request
+📉 34,497 non-test Go lines → **4,535 Java lines**<br>
+📁 225 non-test Go files → **66 Java files**<br>
+🖥️ 1 process → **1** process<br>
+⚡ 251.4 → **250.5** milliseconds per request, discovery endpoint<br>
+🎯 5 of 5 unauthenticated checks agree → **5 of 5**<br>
+🧪 0 tests carried over → **24 tests**
 
-Full method and the numbers that did *not* make this list:
-[`bench/REPORT.md`](https://github.com/TylerJewell/akka-specify-harness/blob/main/pocket-id-port/bench/REPORT.md).
-
----
-
-## What it took to build
-
-⏱️ **0.7 hours** from the first command to the published repository, **0.7** of them active<br>
-💬 **401** exchanges with the model<br>
-✍️ **199,794** tokens written by the model, **76,107,365** counting everything sent and re-sent<br>
-🙋 **0** questions to a human<br>
-🧪 **17** tests
-
-```bash
-python toolkit/tokens.py --port pocket-id    # turns, tokens, elapsed and active time
-```
-
-The record of every question, and where the time went, is in
-[`port-log/`](https://github.com/TylerJewell/akka-specify-harness/tree/main/port-log).
+Full method and the numbers that did not make this list:
+[`bench/REPORT.md`](bench/REPORT.md).
 
 ---
 
 ## What it does
 
-An application redirects someone to sign in, and gets back proof of who they are:
+**Sign-in.** A person registers a passkey and signs in with it (real WebAuthn/FIDO2
+verification via `webauthn4j`, not a stand-in) — or, for automation, an API key. An
+application redirects them through the OIDC authorization-code flow (PKCE mandatory,
+`S256` only), the RFC 8628 device grant for browser-less devices, or `client_credentials` for
+machine-to-machine calls. A sign-in code and a refresh token each work exactly once; trading
+either a second time is refused and cancels whatever it produced the first time.
 
-- **Sign-in needs a matching redirect address and a proof-of-possession code.** An
-  application registers the addresses it can be sent back to, and every sign-in
-  request must prove it can also receive the answer, using a one-time secret only
-  the application that started the request knows. Without both, sign-in is refused
-  before anyone is asked to authenticate.
-- **A sign-in code works exactly once.** Trading it a second time is refused, and
-  doing so cancels any long-lived tokens the first trade produced — a code someone
-  intercepted and replayed does not get a second chance at those tokens either.
-- **What an application learns about someone depends on what it asked for.** Asking
-  only for identity gets a bare identifier. Asking for more releases a name, an
-  email address, or group membership — and an email address is never released
-  alongside a claim about whether it was verified unless there is an email to
-  attach that claim to.
-- **A long-lived token is replaced, not reused, every time it is spent.** Spending
-  it produces a new one and cancels the one just spent, so a token that leaks stops
-  working the moment its rightful owner spends it again.
+**What an application learns depends on what it asked for.** Asking only for identity gets a
+bare identifier; asking for more releases a name, an email, or group membership, gated
+exactly by the granted scope — plus any custom claims an admin attached to the person or
+their group, a user's own claims taking priority over a group's.
 
-Nothing here calls a language model. The work is deciding whether a sign-in request
-is genuine and what to hand back once it is.
+**Administration.** Users, groups, OIDC clients, API keys, custom claims, and the ~40-key app
+configuration are all managed through the same HTTP API the vendored admin UI calls: create,
+update, disable, delete, assign. Every sign-in, account creation, and passkey change is
+recorded to an audit log. A person can be invited by a one-time link or a signup token instead
+of an admin creating their account directly, and an LDAP directory can be synced in.
+
+Nothing here calls a language model. The work is deciding whether a sign-in or a management
+request is genuine, and what to hand back once it is.
 
 ---
 
 ## Design decisions
 
-**Proof-of-possession is required for every application.** The original only
-requires it for applications built to run where a secret cannot be hidden, such as
-a phone app. This port requires it always, because the check is cheap and an
-application that can also keep a secret is safer with both checks than with one.
+**Real WebAuthn, real LDAP, real SCIM push** — not stood in for. Where the prior slice used a
+plain `POST /login` in place of passkey verification, this port verifies actual attestation
+and assertion signatures (`webauthn4j`), syncs an actual LDAP directory (UnboundID LDAP SDK),
+and pushes actual SCIM 2.0 requests to a configured provider.
 
-**Sign-in uses a stand-in step instead of a physical security key.** Passkey
-sign-in needs a real device and a browser; testing this port's sign-in decisions
-does not need either, so a plain sign-in step takes their place. Everything after
-that step behaves exactly the way it would with a security key.
+**One entity per aggregate, one view per list.** Every user, group, client, API key, and
+audit-log entry is an Akka `KeyValueEntity`; every admin listing screen is backed by a `View`
+consuming from those entities. Membership (`User.groupIds`) has exactly one authoritative
+side, read by every endpoint that displays it — see `docs/review-findings.md`'s 2026-08-26
+entry for the bug this fixed.
 
-**One place remembers every sign-in code and token, forever.** The original sweeps
-old ones away on a schedule. This port keeps them for as long as it runs, because
-tracking their age and deciding when to forget them is a different job from
-deciding whether a sign-in request is genuine.
+**Narrowed, and named rather than silently dropped**: no S3 storage backend, no CIMD dynamic
+client registration, no geo-IP on the audit log, no bespoke per-route rate-limit policy table,
+no ZIP backup/export. `specs/SPEC-001-pocket-id.md` §1 gives the reasoning for each.
 
 ---
 
@@ -118,7 +106,7 @@ Restart Claude Code when it asks.
 > Then run /akka:setup to install everything this project needs, and /akka:build to
 > compile it, run the tests, and start it locally.
 
-**3. Open** http://localhost:9034.
+**3. Open** http://localhost:9127.
 
 ---
 
@@ -129,6 +117,7 @@ Restart Claude Code when it asks.
 - Java 21 or newer
 - Maven 3.9 or newer
 - An Akka download token — run `akka code token` once
+- (Only if rebuilding the UI) Node.js and `pnpm`
 
 ### Start the service
 
@@ -137,92 +126,110 @@ mvn compile
 akka local run
 ```
 
-The service starts on **port 9034**.
+The service starts on **port 9127** and serves the vendored web UI at `/`.
 
-### Try it
+### Build the UI (already built and committed under `src/main/resources/static-resources/`)
 
 ```bash
-# sign in as the one seeded person
-curl -X POST localhost:9034/login -d '{"subject":"alice"}' -H 'Content-Type: application/json'
-# -> {"session_id": "...", "subject": "alice"}
-
-# an application starts a sign-in request (needs a code_challenge — see docs/question-log.md
-# row 7 for why it is required here even though the original only requires it sometimes)
-curl -i "localhost:9034/authorize?response_type=code&client_id=test-client&redirect_uri=http://localhost:9034/callback&scope=openid+profile+email&state=xyz&code_challenge=<challenge>&code_challenge_method=S256" \
-  -H "X-Session-Id: <session_id from above>"
-# -> 302, Location carries ?code=...
-
-# the application exchanges the code for tokens
-curl -X POST localhost:9034/oidc/token \
-  --data-urlencode "grant_type=authorization_code" \
-  --data-urlencode "code=<code from above>" \
-  --data-urlencode "redirect_uri=http://localhost:9034/callback" \
-  --data-urlencode "code_verifier=<the secret the challenge was derived from>" \
-  --data-urlencode "client_id=test-client" \
-  --data-urlencode "client_secret=test-secret"
-
-# the application reads back who signed in
-curl localhost:9034/oidc/userinfo -H "Authorization: Bearer <access_token from above>"
+cd gui/webapp
+pnpm install --no-frozen-lockfile
+BUILD_OUTPUT_PATH=../../src/main/resources/static-resources pnpm build
 ```
+
+### Try the API directly
+
+```bash
+# create the first (admin) account — the setup wizard, same as opening the UI fresh
+curl -X POST localhost:9127/api/signup/setup \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","email":"admin@example.com","firstName":"Admin","lastName":"Person"}'
+# -> {"session_id": "...", "subject": "<user id>"}
+
+# list users (admin session required)
+curl localhost:9127/api/users -H "X-Session-Id: <session_id from above>"
+
+# register an OIDC client
+curl -X POST localhost:9127/api/oidc/clients -H "X-Session-Id: <session_id>" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Test App","isPublic":false,"redirectUris":["http://localhost:9127/callback"]}'
+
+# discovery
+curl localhost:9127/.well-known/openid-configuration
+```
+
+`docs/question-log.md` row 11 has the full route-prefix map (`/api/*` versus root).
 
 ---
 
 ## Configuration
 
-There are no environment variables. The one setting is the port it listens on,
-written in `src/main/resources/application.conf`:
+The one setting is the port it listens on, written in `src/main/resources/application.conf`:
 
 ```
-akka.javasdk.dev-mode.http-port = 9034
+akka.javasdk.dev-mode.http-port = 9127
 ```
 
-The one registered application and the one person who can sign in are seeded in
-`application/SeedData.java` rather than configured, because provisioning either
-through an API is a different capability from the sign-in protocol this port
-rebuilds — see `Where it differs from pocket-id/pocket-id`.
+There is no `application-configuration` bootstrap file — the app config's ~40 keys default per
+`AppConfigDefaults.java` and are changed at runtime through `PUT /api/application-configuration`
+(admin only), matching the source's own runtime-configurable design.
+
+---
+
+## What it took to build
+
+This session (2026-08-26, full-system scope) superseded a 2026-08-21 session that built the
+OIDC-only slice. Combined cost across both is tracked by:
+
+```bash
+python toolkit/tokens.py --port pocket-id
+```
+
+The record of every question, decision, and where the time went is in
+[`port-log/`](https://github.com/TylerJewell/akka-specify-harness/tree/main/port-log).
 
 ---
 
 ## Where it differs from pocket-id/pocket-id
 
-Everything not listed here behaves the same way on purpose, including the parts that
-look like mistakes.
+Everything not listed here behaves the same way on purpose, including the parts that look
+like mistakes. `specs/SPEC-001-pocket-id.md` §1 has the reasoning for each in full.
 
-- **How someone proves who they are before an application asks for a token.**
-  pocket-id verifies a physical passkey. This port asks for a plain sign-in step
-  instead (`POST /login`), because rebuilding passkey verification is a different
-  capability from the sign-in protocol around it, and everything downstream of that
-  step behaves identically either way.
-- **Whether proof-of-possession is required for every application.** pocket-id only
-  requires it for applications that cannot keep a secret; an application that can
-  keep one may skip it. This port always requires it, because the check costs
-  nothing extra and there is no application here that benefits from skipping it.
-- **Which registered addresses an application may accept.** pocket-id matches an
-  exact address or one from an allow-list pattern it stores per application. This
-  port matches only an exact address — no pattern list — because the one registered
-  application does not need one.
-- **Which sign-in and token requests are supported.** pocket-id also lets an
-  application ask for a sign-in code up front and hand it to a browser later, sign
-  in a device with no browser at all, ask directly whether a token is still good,
-  end someone's session across every application at once, and register itself by
-  pointing at a document instead of an admin filling in a form. None of these are
-  rebuilt here — this port answers only "is this sign-in request genuine, and what
-  do we hand back," which is the one decision a conformance suite for the basic
-  sign-in flow measures.
-- **Registering an application or a person.** pocket-id has an administrator screen
-  and an API for both. This port seeds one of each in code instead, because
-  provisioning is a different job from deciding whether a sign-in request is
-  genuine.
-- **How long a sign-in code or a long-lived token is remembered.** pocket-id sweeps
-  expired ones away on a schedule. This port keeps every one it has ever issued for
-  as long as it runs, with no eviction — `not checked` against any particular
-  volume, because no sustained run at production traffic was tried against either
-  side.
+- **No S3 file-storage backend.** Profile pictures, app images, and client logos are held as
+  entity bytes (a KeyValueEntity blob) rather than local disk or S3 — the source's own
+  abstraction supports either interchangeably; this port implements the disk-equivalent case
+  and does not stand up a real S3-compatible target to check the other by running against it.
+- **No CIMD (Client ID Metadata Document) dynamic client registration, and no `apis`/
+  permission-grant resource built on top of it.** Correctness there depends on fetching
+  another party's hosted document, which nothing in this port's control can check by running.
+- **No geo-IP resolution on audit-log entries.** The IP address is recorded; resolving it to a
+  country/city needs a licensed MaxMind GeoLite2 database this environment has no license for.
+- **Rate limiting is a lighter, undifferentiated guard**, not the source's named per-route
+  policy table (login vs. signup vs. one-time-access each get their own bucket and rate in the
+  source). The property — abuse resistance exists — is kept; the exact shape is not.
+- **No ZIP backup/export/import, and no standalone CLI subcommands** (`key-rotate`,
+  `encryption-key-rotate`, `export`, `import`, `healthcheck` as a separate binary mode). An
+  Akka service is HTTP-first; `GET /healthz` and `GET /api/version/current` are the genuine
+  equivalents that exist, and the rest is named here rather than silently missing.
+- **WebAuthn attestation trust-chain/AAGUID-metadata verification is not enforced.**
+  Registration and login both perform real signature verification (`webauthn4j`); they do not
+  check an authenticator's attestation certificate against a trust store the way a
+  high-assurance deployment might.
+- **No server-sent stream for admin-UI list views** (RENDERING R1). Every list (users,
+  groups, clients, audit log, API keys) is fetch-on-navigate, matching the source's own
+  SvelteKit data-loading pattern — R1 was not reached this session; see
+  `pocket-id-port/gui/manifest.json`'s `R1_streaming` note.
+- **SCIM push is simplified**: always a full create-or-replace per user rather than the
+  source's last-modified diff, and providers sync one at a time rather than up to four
+  concurrently.
+- **LDAP sync is simplified**: reconciles by unique-identifier attribute; the source's DN-cache
+  and posixGroup member-resolution fallbacks, admin-group derivation, and profile-picture
+  download over LDAP are not implemented.
 
 ---
 
 ## Licence
 
 pocket-id/pocket-id is BSD 2-Clause, © 2024 Elias Schneider. This port reimplements
-the behaviour without copied source; see
+the behaviour without copied source, and vendors the original's own frontend under
+`gui/webapp/` (same licence) per RENDERING.md R3; see
 [`ACKNOWLEDGEMENTS.md`](ACKNOWLEDGEMENTS.md).

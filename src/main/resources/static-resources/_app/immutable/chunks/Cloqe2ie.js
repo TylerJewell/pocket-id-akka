@@ -1,0 +1,1 @@
+import e from"./D6_5ums1.js";function t(){return e()}export{t as default};

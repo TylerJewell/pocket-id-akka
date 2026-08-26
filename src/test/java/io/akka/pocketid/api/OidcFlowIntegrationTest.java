@@ -5,25 +5,51 @@ import static org.assertj.core.api.Assertions.assertThat;
 import akka.javasdk.testkit.TestKitSupport;
 import com.nimbusds.jwt.JWTClaimsSet;
 import io.akka.pocketid.application.AuthorizationCodeEntity;
+import io.akka.pocketid.application.OidcClientEntity;
 import io.akka.pocketid.application.SigningKeys;
+import io.akka.pocketid.application.UserEntity;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
  * SPEC-001 §5 — the authorization-code round trip and every numbered §3 rule reachable over
- * HTTP. Each test method names the rule(s) it covers.
+ * HTTP. Each test method names the rule(s) it covers. The client and user this port used to
+ * seed statically (SeedData) are now real entities, created idempotently before each test.
  */
 public class OidcFlowIntegrationTest extends TestKitSupport {
 
   private static final String CLIENT_ID = "test-client";
   private static final String CLIENT_SECRET = "test-secret";
   private static final String REDIRECT_URI = "http://localhost:9034/callback";
+
+  @BeforeEach
+  void seed() {
+    var existingClient = componentClient.forKeyValueEntity(CLIENT_ID).method(OidcClientEntity::get).invoke();
+    if (existingClient.clientId() == null) {
+      componentClient.forKeyValueEntity(CLIENT_ID).method(OidcClientEntity::create).invoke(
+          new OidcClientEntity.Create(CLIENT_ID, "Test Client", "seeded for OidcFlowIntegrationTest", CLIENT_SECRET, false,
+              List.of(REDIRECT_URI, "https://oidcdebugger.com/debug"), List.of(), Instant.now().toEpochMilli()));
+    }
+    var existingGroup = componentClient.forKeyValueEntity("everyone").method(io.akka.pocketid.application.UserGroupEntity::get).invoke();
+    if (existingGroup.id() == null) {
+      componentClient.forKeyValueEntity("everyone").method(io.akka.pocketid.application.UserGroupEntity::create)
+          .invoke(new io.akka.pocketid.application.UserGroupEntity.Create("everyone", "everyone", "Everyone", Instant.now().toEpochMilli()));
+    }
+    var existingUser = componentClient.forKeyValueEntity("alice").method(UserEntity::get).invoke();
+    if (existingUser.id() == null) {
+      componentClient.forKeyValueEntity("alice").method(UserEntity::create).invoke(
+          new UserEntity.Create("alice", "alice", "alice@example.com", "Alice", "Anderson", "Alice Anderson", false, List.of("everyone"), Instant.now().toEpochMilli()));
+      componentClient.forKeyValueEntity("alice").method(UserEntity::verifyEmail).invoke(new UserEntity.VerifyEmail(Instant.now().toEpochMilli()));
+    }
+  }
 
   private record CodePair(String verifier, String challenge) {}
 
@@ -82,7 +108,7 @@ public class OidcFlowIntegrationTest extends TestKitSupport {
 
   private OidcEndpoint.TokenResponse exchangeCode(String code, String verifier) {
     return httpClient
-        .POST("/oidc/token")
+        .POST("/api/oidc/token")
         .addQueryParameter("grant_type", "authorization_code")
         .addQueryParameter("code", code)
         .addQueryParameter("redirect_uri", REDIRECT_URI)
@@ -105,7 +131,8 @@ public class OidcFlowIntegrationTest extends TestKitSupport {
 
     assertThat(config.response_types_supported()).containsExactly("code");
     assertThat(config.code_challenge_methods_supported()).containsExactly("S256");
-    assertThat(config.grant_types_supported()).containsExactlyInAnyOrder("authorization_code", "refresh_token");
+    assertThat(config.grant_types_supported()).containsExactlyInAnyOrder(
+        "authorization_code", "refresh_token", "client_credentials", "urn:ietf:params:oauth:grant-type:device_code");
     assertThat(config.id_token_signing_alg_values_supported()).containsExactly("RS256");
     assertThat(config.token_endpoint()).endsWith("/oidc/token");
     assertThat(config.userinfo_endpoint()).endsWith("/oidc/userinfo");
@@ -188,7 +215,7 @@ public class OidcFlowIntegrationTest extends TestKitSupport {
 
     var userInfo =
         httpClient
-            .GET("/oidc/userinfo")
+            .GET("/api/oidc/userinfo")
             .addHeader("Authorization", "Bearer " + tokens.access_token())
             .responseBodyAs(Map.class)
             .invoke()
@@ -206,7 +233,7 @@ public class OidcFlowIntegrationTest extends TestKitSupport {
 
     var response =
         httpClient
-            .POST("/oidc/token")
+            .POST("/api/oidc/token")
             .addQueryParameter("grant_type", "authorization_code")
             .addQueryParameter("code", code)
             .addQueryParameter("redirect_uri", REDIRECT_URI)
@@ -228,7 +255,7 @@ public class OidcFlowIntegrationTest extends TestKitSupport {
 
     var response =
         httpClient
-            .POST("/oidc/token")
+            .POST("/api/oidc/token")
             .addQueryParameter("grant_type", "authorization_code")
             .addQueryParameter("code", code)
             .addQueryParameter("redirect_uri", "http://localhost:9034/wrong-callback")
@@ -253,7 +280,7 @@ public class OidcFlowIntegrationTest extends TestKitSupport {
 
     var replay =
         httpClient
-            .POST("/oidc/token")
+            .POST("/api/oidc/token")
             .addQueryParameter("grant_type", "authorization_code")
             .addQueryParameter("code", code)
             .addQueryParameter("redirect_uri", REDIRECT_URI)
@@ -267,7 +294,7 @@ public class OidcFlowIntegrationTest extends TestKitSupport {
     // the refresh token issued by the first (legitimate) exchange must now be dead
     var refreshAttempt =
         httpClient
-            .POST("/oidc/token")
+            .POST("/api/oidc/token")
             .addQueryParameter("grant_type", "refresh_token")
             .addQueryParameter("refresh_token", first.refresh_token())
             .addQueryParameter("client_id", CLIENT_ID)
@@ -287,7 +314,7 @@ public class OidcFlowIntegrationTest extends TestKitSupport {
 
     var second =
         httpClient
-            .POST("/oidc/token")
+            .POST("/api/oidc/token")
             .addQueryParameter("grant_type", "refresh_token")
             .addQueryParameter("refresh_token", first.refresh_token())
             .addQueryParameter("client_id", CLIENT_ID)
@@ -301,7 +328,7 @@ public class OidcFlowIntegrationTest extends TestKitSupport {
 
     var reuseFirst =
         httpClient
-            .POST("/oidc/token")
+            .POST("/api/oidc/token")
             .addQueryParameter("grant_type", "refresh_token")
             .addQueryParameter("refresh_token", first.refresh_token())
             .addQueryParameter("client_id", CLIENT_ID)
@@ -325,7 +352,7 @@ public class OidcFlowIntegrationTest extends TestKitSupport {
 
     var response =
         httpClient
-            .POST("/oidc/token")
+            .POST("/api/oidc/token")
             .addQueryParameter("grant_type", "authorization_code")
             .addQueryParameter("code", code)
             .addQueryParameter("redirect_uri", REDIRECT_URI)
@@ -343,7 +370,7 @@ public class OidcFlowIntegrationTest extends TestKitSupport {
     // rule 6, question-log row 3
     var response =
         httpClient
-            .POST("/oidc/token")
+            .POST("/api/oidc/token")
             .addQueryParameter("grant_type", "authorization_code")
             .addQueryParameter("code", "whatever")
             .addQueryParameter("redirect_uri", REDIRECT_URI)
@@ -358,11 +385,11 @@ public class OidcFlowIntegrationTest extends TestKitSupport {
   @Test
   void userInfoRejectsMissingOrInvalidBearerToken() {
     // rule 12
-    var noHeader = httpClient.GET("/oidc/userinfo").invoke().httpResponse();
+    var noHeader = httpClient.GET("/api/oidc/userinfo").invoke().httpResponse();
     assertThat(noHeader.status().intValue()).isEqualTo(401);
 
     var badToken =
-        httpClient.GET("/oidc/userinfo").addHeader("Authorization", "Bearer garbage").invoke().httpResponse();
+        httpClient.GET("/api/oidc/userinfo").addHeader("Authorization", "Bearer garbage").invoke().httpResponse();
     assertThat(badToken.status().intValue()).isEqualTo(401);
   }
 }

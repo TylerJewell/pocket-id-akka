@@ -11,13 +11,22 @@ is included as `LICENSE-pocket-id`.
 
 ## What was copied
 
-**No source was copied.** No Go file, fragment or expression from pocket-id appears
-here; every file in `src/` was written for this project. The only things carried
-across deliberately are wire-level details that describe the *protocol*, not the
-implementation: field names and error-response shapes (for example
+**The backend: no source.** No Go file, fragment or expression from pocket-id's
+`backend/` appears here; every file in `src/` was written for this project. The only
+things carried across deliberately are wire-level details that describe the *protocol*,
+not the implementation: field names and error-response shapes (for example
 `{"error":"invalid_client","error_description":"..."}`) that a relying party sending
 requests to either system needs to see identically, established by running the real
 source in Docker (`pocket-id-port/docs/question-log.md`, `pocket-id-port/probes/probe_01.py`).
+
+**The web interface: vendored verbatim, deliberately.** `gui/webapp/` is pocket-id's own
+`frontend/` (SvelteKit), copied unchanged except for `lib/services/app-config-service.ts`
+(one endpoint's request/response shape, `docs/webapp-diff.md`-style change noted in
+`pocket-id-port/gui/manifest.json`'s `data_layer_diff`). This is RENDERING.md R3's rule —
+the interface that already exists is the one the port ships — and is licensed
+identically to the rest of pocket-id (BSD 2-Clause, same `LICENSE-pocket-id`), which
+permits this. Listed in `.vendored` at the repository root and skipped by
+`toolkit/source_hygiene.py`/`toolkit/copied_strings.py` as vendored rather than authored.
 
 ## What is derived
 

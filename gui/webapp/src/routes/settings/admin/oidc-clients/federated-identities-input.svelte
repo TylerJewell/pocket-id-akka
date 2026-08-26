@@ -1,0 +1,168 @@
+<script lang="ts">
+	import FormInput from '$lib/components/form/form-input.svelte';
+	import SwitchWithLabel from '$lib/components/form/switch-with-label.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import * as Field from '$lib/components/ui/field';
+	import { Input } from '$lib/components/ui/input';
+	import { m } from '$lib/paraglide/messages';
+	import type { OidcClientFederatedIdentity } from '$lib/types/oidc.type';
+	import { LucideMinus, LucidePlus } from '@lucide/svelte';
+	import type { Snippet } from 'svelte';
+	import type { HTMLAttributes } from 'svelte/elements';
+	import { z } from 'zod/v4';
+
+	let {
+		federatedIdentities = $bindable([]),
+		errors,
+		disabled = false,
+		...restProps
+	}: HTMLAttributes<HTMLDivElement> & {
+		federatedIdentities: OidcClientFederatedIdentity[];
+		errors?: z.core.$ZodIssue[];
+		disabled?: boolean;
+		children?: Snippet;
+	} = $props();
+
+	function addFederatedIdentity() {
+		federatedIdentities = [
+			...federatedIdentities,
+			{
+				issuer: '',
+				subject: '',
+				audience: '',
+				jwks: '',
+				replayProtection: true
+			}
+		];
+	}
+
+	function removeFederatedIdentity(index: number) {
+		federatedIdentities = federatedIdentities.filter((_, i) => i !== index);
+	}
+
+	function updateFederatedIdentity<K extends keyof OidcClientFederatedIdentity>(
+		index: number,
+		field: K,
+		value: OidcClientFederatedIdentity[K]
+	) {
+		federatedIdentities[index] = {
+			...federatedIdentities[index],
+			[field]: value
+		};
+	}
+
+	function getFieldError(index: number, field: keyof OidcClientFederatedIdentity): string | null {
+		if (!errors) return null;
+		const path = [index, field];
+		return errors?.filter((e) => e.path[0] == path[0] && e.path[1] == path[1])[0]?.message;
+	}
+</script>
+
+<div {...restProps}>
+	<FormInput {disabled}>
+		<div class="flex flex-col gap-4">
+			{#each federatedIdentities as identity, i (identity)}
+				<div class="flex flex-col gap-3">
+					<div class="flex items-center justify-between">
+						<Field.Label>Identity {i + 1}</Field.Label>
+						{#if federatedIdentities.length > 0}
+							<Button
+								variant="outline"
+								size="sm"
+								onclick={() => removeFederatedIdentity(i)}
+								aria-label="Remove federated identity"
+								{disabled}
+							>
+								<LucideMinus data-icon="inline-start" />
+							</Button>
+						{/if}
+					</div>
+
+					<div class="grid grid-cols-1 gap-5 md:grid-cols-2">
+						<Field.Field>
+							<Field.Label required for="issuer-{i}">Issuer</Field.Label>
+							<Input
+								id="issuer-{i}"
+								placeholder="https://example.com/"
+								value={identity.issuer}
+								oninput={(e) => updateFederatedIdentity(i, 'issuer', e.currentTarget.value)}
+								aria-invalid={!!getFieldError(i, 'issuer')}
+								{disabled}
+							/>
+							{#if getFieldError(i, 'issuer')}
+								<Field.Error>{getFieldError(i, 'issuer')}</Field.Error>
+							{/if}
+						</Field.Field>
+
+						<Field.Field>
+							<Field.Label for="subject-{i}">Subject</Field.Label>
+							<Input
+								id="subject-{i}"
+								placeholder="Defaults to the client ID"
+								value={identity.subject || ''}
+								oninput={(e) => updateFederatedIdentity(i, 'subject', e.currentTarget.value)}
+								aria-invalid={!!getFieldError(i, 'subject')}
+								{disabled}
+							/>
+							{#if getFieldError(i, 'subject')}
+								<Field.Error>{getFieldError(i, 'subject')}</Field.Error>
+							{/if}
+						</Field.Field>
+
+						<Field.Field>
+							<Field.Label for="audience-{i}">Audience</Field.Label>
+							<Input
+								id="audience-{i}"
+								placeholder="Defaults to the Pocket ID URL"
+								value={identity.audience || ''}
+								oninput={(e) => updateFederatedIdentity(i, 'audience', e.currentTarget.value)}
+								aria-invalid={!!getFieldError(i, 'audience')}
+								{disabled}
+							/>
+							{#if getFieldError(i, 'audience')}
+								<Field.Error>{getFieldError(i, 'audience')}</Field.Error>
+							{/if}
+						</Field.Field>
+
+						<Field.Field>
+							<Field.Label for="jwks-{i}">JWKS URL</Field.Label>
+							<Input
+								id="jwks-{i}"
+								placeholder="Defaults to {identity.issuer || '<issuer>'}/.well-known/jwks.json"
+								value={identity.jwks || ''}
+								oninput={(e) => updateFederatedIdentity(i, 'jwks', e.currentTarget.value)}
+								aria-invalid={!!getFieldError(i, 'jwks')}
+								{disabled}
+							/>
+							{#if getFieldError(i, 'jwks')}
+								<Field.Error>{getFieldError(i, 'jwks')}</Field.Error>
+							{/if}
+						</Field.Field>
+						<SwitchWithLabel
+							id="replay-protection-{i}"
+							label={m.replay_protection()}
+							description={m.replay_protection_description()}
+							checked={identity.replayProtection}
+							onCheckedChange={(checked) => updateFederatedIdentity(i, 'replayProtection', checked)}
+							{disabled}
+						/>
+					</div>
+				</div>
+			{/each}
+		</div>
+	</FormInput>
+
+	<Button
+		class="mt-7"
+		variant="secondary"
+		size="sm"
+		onclick={addFederatedIdentity}
+		type="button"
+		{disabled}
+	>
+		<LucidePlus data-icon="inline-start" />
+		{federatedIdentities.length === 0
+			? m.add_federated_client_credential()
+			: m.add_another_federated_client_credential()}
+	</Button>
+</div>

@@ -1,0 +1,1 @@
+import{n as e}from"../chunks/hePW80VL.js";import{yt as t}from"../chunks/DEAjIYsM.js";import"../chunks/C1Mmv-w1.js";import{t as n}from"../chunks/Ts_UME2B.js";import{n as r}from"../chunks/BelWyZaW.js";var i=e({load:()=>a}),a=async()=>{throw r(307,t(n)?.homePageUrl??`/`)};export{i as universal};

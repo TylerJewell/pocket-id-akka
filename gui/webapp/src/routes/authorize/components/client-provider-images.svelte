@@ -1,0 +1,75 @@
+<script lang="ts">
+	import Logo from '$lib/components/logo.svelte';
+	import CheckmarkAnimated from '$lib/icons/checkmark-animated.svelte';
+	import ConnectArrow from '$lib/icons/connect-arrow.svelte';
+	import CrossAnimated from '$lib/icons/cross-animated.svelte';
+	import { m } from '$lib/paraglide/messages';
+	import type { OidcClientMetaData } from '$lib/types/oidc.type';
+	import { cachedOidcClientLogo } from '$lib/utils/cached-image-util';
+	import { mode } from 'mode-watcher';
+
+	const {
+		success,
+		error,
+		client
+	}: {
+		success?: boolean;
+		error?: boolean;
+		client?: OidcClientMetaData;
+	} = $props();
+
+	let animationDone = $state(false);
+
+	$effect(() => {
+		if (success || error) {
+			setTimeout(() => (animationDone = true), client ? 500 : 0);
+		} else {
+			animationDone = false;
+		}
+	});
+
+	const isLightMode = $derived(mode.current === 'light');
+</script>
+
+<div class="flex justify-center gap-3">
+	<div
+		class=" bg-muted transition-transform rounded-2xl p-3 duration-500 ease-in {success || error
+			? 'translate-x-[108px]'
+			: ''}"
+	>
+		<Logo class="size-10" animate={false} />
+	</div>
+
+	<ConnectArrow
+		class="h-w-32 w-32 transition-opacity duration-500 {success || error
+			? 'opacity-0'
+			: 'opacity-100 delay-300'}"
+	/>
+	<div
+		class="rounded-2xl p-3 [transition:translate_500ms_ease-in,background-color_200ms] {success ||
+		error
+			? '-translate-x-[108px]'
+			: ''} {animationDone ? (success ? 'bg-green-200' : 'bg-red-200') : 'bg-muted'}"
+	>
+		{#if animationDone && success}
+			<div class="flex size-10 items-center justify-center">
+				<CheckmarkAnimated class="size-7" />
+			</div>
+		{:else if animationDone && error}
+			<div class="flex size-10 items-center justify-center">
+				<CrossAnimated class="size-5" />
+			</div>
+		{:else if client?.hasLogo}
+			<img
+				class="aspect-square size-10 object-contain"
+				src={cachedOidcClientLogo.getUrl(client.id, isLightMode)}
+				draggable={false}
+				alt={m.client_logo()}
+			/>
+		{:else if client?.name}
+			<div class="flex size-10 items-center justify-center text-3xl font-bold">
+				{client.name.charAt(0).toUpperCase()}
+			</div>
+		{/if}
+	</div>
+</div>

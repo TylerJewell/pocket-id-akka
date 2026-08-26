@@ -1,0 +1,347 @@
+<script lang="ts">
+	import FormInput from '$lib/components/form/form-input.svelte';
+	import FormattedMessage from '$lib/components/formatted-message.svelte';
+	import SwitchWithLabel from '$lib/components/form/switch-with-label.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import * as Tabs from '$lib/components/ui/tabs';
+	import { m } from '$lib/paraglide/messages';
+	import type {
+		OidcClient,
+		OidcClientCreateWithLogo,
+		OidcClientUpdateWithLogo
+	} from '$lib/types/oidc.type';
+	import { cachedOidcClientLogo } from '$lib/utils/cached-image-util';
+	import { preventDefault } from '$lib/utils/event-util';
+	import { createForm } from '$lib/utils/form-util';
+	import { cn } from '$lib/utils/style';
+	import { callbackUrlSchema, emptyToUndefined, optionalUrl } from '$lib/utils/zod-util';
+	import { LucideChevronDown, LucideMoon, LucideSun } from '@lucide/svelte';
+	import { slide } from 'svelte/transition';
+	import { z } from 'zod/v4';
+	import OidcCallbackUrlInput from './oidc-callback-url-input.svelte';
+	import OidcClientImageInput from './oidc-client-image-input.svelte';
+
+	let {
+		callback,
+		existingClient,
+		mode
+	}: {
+		existingClient?: OidcClient;
+		callback: (client: OidcClientCreateWithLogo | OidcClientUpdateWithLogo) => Promise<boolean>;
+		mode: 'create' | 'update';
+	} = $props();
+	let isLoading = $state(false);
+	let showAdvancedOptions = $state(false);
+	let logo = $state<File | null | undefined>();
+	let darkLogo = $state<File | null | undefined>();
+	let logoDataURL: string | null = $state(
+		existingClient?.hasLogo ? cachedOidcClientLogo.getUrl(existingClient!.id) : null
+	);
+	let darkLogoDataURL: string | null = $state(
+		existingClient?.hasDarkLogo ? cachedOidcClientLogo.getUrl(existingClient!.id, false) : null
+	);
+	const isCIMDClient = $derived(existingClient?.clientType === 'cimd');
+
+	const client = {
+		id: '',
+		name: existingClient?.name || '',
+		description: existingClient?.description || '',
+		callbackURLs: existingClient?.callbackURLs || [],
+		logoutCallbackURLs: existingClient?.logoutCallbackURLs || [],
+		isPublic: existingClient?.isPublic || false,
+		pkceEnabled: existingClient?.pkceEnabled || false,
+		requiresReauthentication: existingClient?.requiresReauthentication || false,
+		requiresPushedAuthorizationRequests:
+			existingClient?.requiresPushedAuthorizationRequests || false,
+		skipConsent: existingClient?.skipConsent || false,
+		launchURL: existingClient?.launchURL || '',
+		logoUrl: '',
+		darkLogoUrl: '',
+		pkceSupported: existingClient?.pkceSupported || false,
+		accessTokenDurationMinutes: existingClient?.accessTokenDurationMinutes ?? 60,
+		refreshTokenDurationMinutes: existingClient?.refreshTokenDurationMinutes ?? 30 * 24 * 60
+	};
+
+	const formSchema = z.object({
+		id: emptyToUndefined(
+			z
+				.string()
+				.min(2)
+				.max(128)
+				.regex(/^[a-zA-Z0-9_-]+$/, {
+					message: m.invalid_client_id()
+				})
+				.optional()
+		),
+		name: z.string().min(2).max(50),
+		description: z.string().max(150),
+		callbackURLs: z.array(callbackUrlSchema).default([]),
+		logoutCallbackURLs: z.array(callbackUrlSchema).default([]),
+		isPublic: z.boolean(),
+		pkceEnabled: z.boolean(),
+		requiresReauthentication: z.boolean(),
+		requiresPushedAuthorizationRequests: z.boolean(),
+		skipConsent: z.boolean(),
+		launchURL: optionalUrl,
+		logoUrl: optionalUrl,
+		darkLogoUrl: optionalUrl,
+		accessTokenDurationMinutes: z
+			.number()
+			.min(1)
+			.max(365 * 24 * 60)
+			.int(),
+		refreshTokenDurationMinutes: z
+			.number()
+			.min(1)
+			.max(365 * 24 * 60)
+			.int()
+	});
+
+	type FormSchema = typeof formSchema;
+	const { inputs, ...form } = createForm<FormSchema>(formSchema, client);
+
+	const pkcePromptNeeded = $derived(!$inputs.pkceEnabled.value && client.pkceSupported);
+
+	async function onSubmit() {
+		const data = form.validate();
+		if (!data) return;
+		isLoading = true;
+
+		const success = await callback({
+			...data,
+			credentials: existingClient?.credentials ?? { federatedIdentities: [], secrets: [] },
+			logo: $inputs.logoUrl?.value ? undefined : logo,
+			logoUrl: $inputs.logoUrl?.value,
+			darkLogo: $inputs.darkLogoUrl?.value ? undefined : darkLogo,
+			darkLogoUrl: $inputs.darkLogoUrl?.value,
+			isGroupRestricted: existingClient?.isGroupRestricted ?? true
+		});
+
+		const hasLogo = logo != null || !!$inputs.logoUrl?.value;
+		const hasDarkLogo = darkLogo != null || !!$inputs.darkLogoUrl?.value;
+		if (success && existingClient) {
+			if (hasLogo) {
+				logoDataURL = cachedOidcClientLogo.getUrl(existingClient.id);
+			}
+			if (hasDarkLogo) {
+				darkLogoDataURL = cachedOidcClientLogo.getUrl(existingClient.id, false);
+			}
+		}
+
+		if (success && !existingClient) form.reset();
+		isLoading = false;
+	}
+
+	function onLogoChange(input: File | string | null, light: boolean = true) {
+		if (input == null) return;
+
+		const logoUrlInput = light ? $inputs.logoUrl : $inputs.darkLogoUrl;
+
+		if (typeof input === 'string') {
+			if (light) {
+				logo = null;
+				logoDataURL = input || null;
+			} else {
+				darkLogo = null;
+				darkLogoDataURL = input || null;
+			}
+			logoUrlInput!.value = input;
+		} else {
+			if (light) {
+				logo = input;
+				logoDataURL = URL.createObjectURL(input);
+			} else {
+				darkLogo = input;
+				darkLogoDataURL = URL.createObjectURL(input);
+			}
+			if (logoUrlInput) {
+				logoUrlInput.value = '';
+			}
+		}
+	}
+
+	function resetLogo(light: boolean = true) {
+		if (light) {
+			logo = null;
+			logoDataURL = null;
+			if ($inputs.logoUrl) {
+				$inputs.logoUrl.value = '';
+			}
+		} else {
+			darkLogo = null;
+			darkLogoDataURL = null;
+			if ($inputs.darkLogoUrl) {
+				$inputs.darkLogoUrl.value = '';
+			}
+		}
+	}
+</script>
+
+{#snippet callbackUrlDescription()}
+	<FormattedMessage message={m.callback_url_description} />
+{/snippet}
+
+{#snippet logoutCallbackUrlDescription()}
+	<FormattedMessage message={m.logout_callback_url_description} />
+{/snippet}
+
+<form onsubmit={preventDefault(onSubmit)}>
+	<div class="grid grid-cols-1 gap-x-3 gap-y-7 sm:flex-row md:grid-cols-2">
+		<FormInput
+			label={m.name()}
+			class="w-full"
+			description={m.client_name_description()}
+			bind:input={$inputs.name}
+			disabled={isCIMDClient}
+		/>
+		<FormInput
+			label={m.client_description()}
+			class="w-full"
+			description={m.client_description_description()}
+			bind:input={$inputs.description}
+		/>
+		<FormInput
+			label={m.client_launch_url()}
+			description={m.client_launch_url_description()}
+			class="w-full"
+			type="url"
+			bind:input={$inputs.launchURL}
+		/>
+		<OidcCallbackUrlInput
+			label={m.callback_urls()}
+			description={callbackUrlDescription}
+			class="w-full"
+			bind:callbackURLs={$inputs.callbackURLs.value}
+			bind:error={$inputs.callbackURLs.error}
+			disabled={isCIMDClient}
+		/>
+		<OidcCallbackUrlInput
+			label={m.logout_callback_urls()}
+			description={logoutCallbackUrlDescription}
+			class="w-full"
+			bind:callbackURLs={$inputs.logoutCallbackURLs.value}
+			bind:error={$inputs.logoutCallbackURLs.error}
+			disabled={isCIMDClient}
+		/>
+		<div>
+			<SwitchWithLabel
+				id="public-client"
+				label={m.public_client()}
+				description={m.public_clients_description()}
+				onCheckedChange={(v) => {
+					if (v) {
+						$inputs.pkceEnabled.value = true;
+					}
+				}}
+				bind:checked={$inputs.isPublic.value}
+				disabled={isCIMDClient}
+			/>
+		</div>
+		<div
+			class="rounded-lg transition-all duration-200"
+			class:[&_[data-switch-root]]:ring-2={pkcePromptNeeded}
+			class:[&_[data-switch-root]]:ring-blue-500={pkcePromptNeeded}
+		>
+			<SwitchWithLabel
+				id="pkce"
+				label={m.pkce()}
+				description={m.proof_key_code_exchange_is_a_security_feature_to_prevent_csrf_and_authorization_code_interception_attacks()}
+				disabled={isCIMDClient || $inputs.isPublic.value}
+				bind:checked={$inputs.pkceEnabled.value}
+			/>
+		</div>
+		<SwitchWithLabel
+			id="requires-reauthentication"
+			label={m.requires_reauthentication()}
+			description={m.requires_users_to_authenticate_again_on_each_authorization()}
+			bind:checked={$inputs.requiresReauthentication.value}
+		/>
+		<SwitchWithLabel
+			id="skip-consent"
+			label={m.skip_consent()}
+			description={m.skip_consent_description()}
+			bind:checked={$inputs.skipConsent.value}
+		/>
+	</div>
+	<div class="mt-7 w-full md:w-1/2">
+		<Tabs.Root value="light-logo">
+			<Tabs.Content value="light-logo">
+				<OidcClientImageInput
+					{logoDataURL}
+					resetLogo={() => resetLogo(true)}
+					clientName={$inputs.name.value}
+					light={true}
+					onLogoChange={(input) => onLogoChange(input, true)}
+				>
+					{#snippet tabTriggers()}
+						<Tabs.List class="grid h-8 w-full grid-cols-2">
+							<Tabs.Trigger value="light-logo" class="px-3">
+								<LucideSun class="size-4" />
+							</Tabs.Trigger>
+							<Tabs.Trigger value="dark-logo" class="px-3">
+								<LucideMoon class="size-4" />
+							</Tabs.Trigger>
+						</Tabs.List>
+					{/snippet}
+				</OidcClientImageInput>
+			</Tabs.Content>
+			<Tabs.Content value="dark-logo">
+				<OidcClientImageInput
+					light={false}
+					logoDataURL={darkLogoDataURL}
+					resetLogo={() => resetLogo(false)}
+					clientName={$inputs.name.value}
+					onLogoChange={(input) => onLogoChange(input, false)}
+				>
+					{#snippet tabTriggers()}
+						<Tabs.List class="grid h-8 w-full grid-cols-2">
+							<Tabs.Trigger value="light-logo" class="px-3">
+								<LucideSun class="size-4" />
+							</Tabs.Trigger>
+							<Tabs.Trigger value="dark-logo" class="px-3">
+								<LucideMoon class="size-4" />
+							</Tabs.Trigger>
+						</Tabs.List>
+					{/snippet}
+				</OidcClientImageInput>
+			</Tabs.Content>
+		</Tabs.Root>
+	</div>
+
+	{#if showAdvancedOptions}
+		<div class="mt-7 flex flex-col gap-y-7 md:col-span-2" transition:slide={{ duration: 200 }}>
+			<SwitchWithLabel
+				id="requires-par"
+				label={m.requires_pushed_authorization_requests()}
+				description={m.requires_pushed_authorization_requests_description()}
+				bind:checked={$inputs.requiresPushedAuthorizationRequests.value}
+			/>
+			{#if mode == 'create'}
+				<FormInput
+					label={m.client_id()}
+					placeholder={m.generated()}
+					class="w-full md:w-1/2"
+					description={m.custom_client_id_description()}
+					bind:input={$inputs.id}
+				/>
+			{/if}
+		</div>
+	{/if}
+
+	<div class="relative mt-5 flex justify-center">
+		<Button
+			variant="ghost"
+			class="text-muted-foreground"
+			onclick={() => (showAdvancedOptions = !showAdvancedOptions)}
+		>
+			{showAdvancedOptions ? m.hide_advanced_options() : m.show_advanced_options()}
+			<LucideChevronDown
+				class={cn(
+					'size-5 transition-transform duration-200',
+					showAdvancedOptions && 'rotate-180 transform'
+				)}
+			/>
+		</Button>
+		<Button {isLoading} type="submit" class="absolute right-0">{m.save()}</Button>
+	</div>
+</form>

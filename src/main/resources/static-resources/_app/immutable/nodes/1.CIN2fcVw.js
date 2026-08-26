@@ -1,0 +1,1 @@
+import{At as e,jt as t}from"../chunks/DEAjIYsM.js";import{s as n}from"../chunks/kr8lFKCN.js";import{t as r}from"../chunks/BM3sn4Ho.js";import"../chunks/xihTtKlq.js";import"../chunks/CSdOTrNn.js";import{t as i}from"../chunks/DeDEJPso.js";function a(a,o){t(o,!1),n(),r(a,{get message(){return i.error.message}}),e()}export{a as component};

@@ -1,0 +1,2 @@
+gui/webapp/  # pocket-id's own SvelteKit frontend, vendored per RENDERING.md R3 — reused, not rebuilt
+src/main/resources/static-resources/  # the vendored frontend's own production build output

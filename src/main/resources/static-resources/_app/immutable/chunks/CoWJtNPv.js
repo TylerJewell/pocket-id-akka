@@ -1,0 +1,1 @@
+import{t as e}from"./DCGqwC3T.js";import{n as t,r as n,t as r}from"./Bg9TEUCM.js";import{t as i}from"./BD_UklkM.js";var a={code:`en-GB`,formatDistance:e,formatLong:i,formatRelative:n,localize:t,match:r,options:{weekStartsOn:1,firstWeekContainsDate:4}};export{a as default,a as enGB};

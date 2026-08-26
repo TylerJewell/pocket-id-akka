@@ -1,0 +1,135 @@
+import userStore from '$lib/stores/user-store';
+import type { AllAppConfig } from '$lib/types/application-configuration.type';
+import {
+	cachedApplicationLogo,
+	cachedBackgroundImage,
+	cachedDefaultProfilePicture,
+	cachedEmailLogo,
+	cachedProfilePicture
+} from '$lib/utils/cached-image-util';
+import { get } from 'svelte/store';
+import APIService from './api-service';
+
+export default class AppConfigService extends APIService {
+	// The Akka port's AppConfigEndpoint returns/accepts a flat {key: value} object rather than
+	// the source's array of {key, value} pairs — the same information, a simpler shape to
+	// produce from a KeyValueEntity's Map<String,String> state (RENDERING R3's data-layer diff).
+	list = async (showAll = false) => {
+		let url = '/application-configuration';
+		if (showAll) url += '/all';
+		const { data } = await this.api.get<Record<string, string>>(url);
+		return parseConfigList(data);
+	};
+
+	update = async (appConfig: AllAppConfig) => {
+		// Convert all values to string, stringifying JSON where needed
+		const appConfigConvertedToString: Record<string, string> = {};
+		for (const key in appConfig) {
+			const value = (appConfig as any)[key];
+			appConfigConvertedToString[key] =
+				typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
+		}
+		const res = await this.api.put('/application-configuration', { values: appConfigConvertedToString });
+		return parseConfigList(res.data);
+	};
+
+	updateFavicon = async (favicon: File) => {
+		const formData = new FormData();
+		formData.append('file', favicon);
+
+		await this.api.put(`/application-images/favicon`, formData);
+	};
+
+	updateLogo = async (logo: File, light = true) => {
+		const formData = new FormData();
+		formData.append('file', logo);
+
+		await this.api.put(`/application-images/logo`, formData, {
+			params: { light }
+		});
+		cachedApplicationLogo.bustCache(light);
+	};
+
+	deleteLogo = async (light = true) => {
+		await this.api.delete(`/application-images/logo`, {
+			params: { light }
+		});
+		cachedApplicationLogo.bustCache(light);
+	};
+
+	updateEmailLogo = async (emailLogo: File) => {
+		const formData = new FormData();
+		formData.append('file', emailLogo);
+
+		await this.api.put(`/application-images/email`, formData);
+		cachedEmailLogo.bustCache();
+	};
+
+	updateDefaultProfilePicture = async (defaultProfilePicture: File) => {
+		const formData = new FormData();
+		formData.append('file', defaultProfilePicture);
+
+		await this.api.put(`/application-images/default-profile-picture`, formData);
+		cachedDefaultProfilePicture.bustCache();
+	};
+
+	updateBackgroundImage = async (backgroundImage: File) => {
+		const formData = new FormData();
+		formData.append('file', backgroundImage!);
+
+		await this.api.put(`/application-images/background`, formData);
+		cachedBackgroundImage.bustCache();
+	};
+
+	deleteBackgroundImage = async () => {
+		await this.api.delete(`/application-images/background`);
+		cachedBackgroundImage.bustCache();
+	};
+
+	deleteDefaultProfilePicture = async () => {
+		await this.api.delete('/application-images/default-profile-picture');
+		cachedDefaultProfilePicture.bustCache();
+		cachedProfilePicture.bustCache(get(userStore)!.id);
+	};
+
+	sendTestEmail = async () => {
+		await this.api.post('/application-configuration/test-email');
+	};
+
+	syncLdap = async () => {
+		await this.api.post('/application-configuration/sync-ldap');
+	};
+}
+
+function parseConfigList(data: Record<string, string>) {
+	const appConfig: Partial<AllAppConfig> = {};
+	for (const key in data) {
+		(appConfig as any)[key] = parseValue(data[key]);
+	}
+
+	return appConfig as AllAppConfig;
+}
+
+function parseValue(value: string) {
+	// Try to parse JSON first
+	try {
+		const parsed = JSON.parse(value);
+		if (typeof parsed === 'object' && parsed !== null) {
+			return parsed;
+		}
+		value = String(parsed);
+	} catch {
+		// Keep the original string when the value is not valid JSON
+	}
+
+	// Handle rest of the types
+	if (value === 'true') {
+		return true;
+	} else if (value === 'false') {
+		return false;
+	} else if (/^-?\d+(\.\d+)?$/.test(value)) {
+		return parseFloat(value);
+	} else {
+		return value;
+	}
+}
