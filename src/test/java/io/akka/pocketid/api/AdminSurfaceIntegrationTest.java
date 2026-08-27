@@ -162,4 +162,36 @@ public class AdminSurfaceIntegrationTest extends TestKitSupport {
     var reset = httpClient.GET("/api/application-configuration/all").addHeader("X-Session-Id", sessionId).responseBodyAs(Map.class).invoke().body();
     assertThat(reset.get("appName")).isEqualTo("Pocket ID");
   }
+
+  /** RENDERING.md R4/R5 appearance comparison against the running original (gui/manifest.json,
+   * 2026-08-27 session) found the login/setup/device screens' background pane blank on the port:
+   * app_images_bootstrap.go seeds background.webp/favicon.ico/logoEmail.png into the source's
+   * image store on first boot, and nothing here did the equivalent, so a fresh install's
+   * GET /api/application-images/background 404'd where the source returns the bundled photo. */
+  @Test
+  void defaultBackgroundFaviconAndEmailImagesServeUntilOverriddenOrDeleted() {
+    var background = httpClient.GET("/api/application-images/background").invoke();
+    assertThat(background.httpResponse().status().intValue()).isEqualTo(200);
+    assertThat(background.httpResponse().entity().getContentType().toString()).contains("webp");
+
+    var favicon = httpClient.GET("/api/application-images/favicon").invoke();
+    assertThat(favicon.httpResponse().status().intValue()).isEqualTo(200);
+
+    var email = httpClient.GET("/api/application-images/email").invoke();
+    assertThat(email.httpResponse().status().intValue()).isEqualTo(200);
+
+    String sessionId = setupInitialAdmin();
+    String uploaded = java.util.Base64.getEncoder().encodeToString("not-a-real-image".getBytes());
+    httpClient.PUT("/api/application-images/background")
+        .addHeader("X-Session-Id", sessionId)
+        .withRequestBody(new AppConfigEndpoint.ImageUpload(uploaded, "image/png"))
+        .invoke();
+    var afterUpload = httpClient.GET("/api/application-images/background").invoke();
+    assertThat(afterUpload.httpResponse().status().intValue()).isEqualTo(200);
+    assertThat(afterUpload.httpResponse().entity().getContentType().toString()).contains("png");
+
+    httpClient.DELETE("/api/application-images/background").addHeader("X-Session-Id", sessionId).invoke();
+    var afterDelete = httpClient.GET("/api/application-images/background").invoke();
+    assertThat(afterDelete.httpResponse().status().intValue()).isEqualTo(404);
+  }
 }

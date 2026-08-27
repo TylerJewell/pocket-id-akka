@@ -26,8 +26,14 @@
 	let animate = $derived(isInitialLoad && !$appConfigStore.disableAnimations);
 
 	onMount(async () => {
+		// GET, not HEAD: the source's chi router answers a HEAD the same as a GET with no
+		// body, but this port's HTTP endpoints are declared with @Get only (RENDERING R3's
+		// one data-layer diff for this file) -- a HEAD to one hangs rather than 404ing under
+		// the Akka SDK's dev-mode runtime, found by RENDERING R4/R5's appearance comparison
+		// against the running original (every backgroundImageExists check silently never
+		// resolving true, so the background pane never rendered).
 		fetch(cachedBackgroundImage.getUrl(), {
-			method: 'HEAD'
+			method: 'GET'
 		})
 			.then(async (res) => (backgroundImageExists = res.ok))
 			.catch(() => (backgroundImageExists = false));

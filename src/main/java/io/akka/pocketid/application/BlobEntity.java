@@ -12,19 +12,19 @@ import akka.javasdk.keyvalueentity.KeyValueEntity;
 @Component(id = "blob")
 public class BlobEntity extends KeyValueEntity<BlobEntity.State> {
 
-  public record State(String id, String contentType, String base64Data) {
-    public boolean isEmpty() { return id == null; }
+  public record State(String id, String contentType, String base64Data, boolean deleted) {
+    public boolean isEmpty() { return id == null || deleted; }
   }
 
   public record Put(String id, String contentType, String base64Data) {}
 
   @Override
   public State emptyState() {
-    return new State(null, null, null);
+    return new State(null, null, null, false);
   }
 
   public Effect<State> put(Put cmd) {
-    var s = new State(cmd.id(), cmd.contentType(), cmd.base64Data());
+    var s = new State(cmd.id(), cmd.contentType(), cmd.base64Data(), false);
     return effects().updateState(s).thenReply(s);
   }
 
@@ -32,7 +32,12 @@ public class BlobEntity extends KeyValueEntity<BlobEntity.State> {
     return effects().reply(currentState());
   }
 
+  // A tombstone rather than deleteEntity(): app_images_bootstrap.go's own `.deleted` marker
+  // preserves the distinction between "never set" and "explicitly cleared" for the one bundled
+  // image a caller can remove back to none (the background) -- AppConfigEndpoint's default-image
+  // fallback reads State.deleted() to keep that distinction rather than re-serving the bundled
+  // default the moment the entity looks empty again.
   public Effect<String> delete() {
-    return effects().deleteEntity().thenReply("ok");
+    return effects().updateState(new State(null, null, null, true)).thenReply("ok");
   }
 }

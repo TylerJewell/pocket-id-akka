@@ -247,6 +247,14 @@ like mistakes. `specs/SPEC-001-pocket-id.md` §1 has the reasoning for each in f
   `request_unauthorized`.** Both return `401`; the source's message names the missing
   `Authorization` header specifically, this port's names the failed client authentication in
   general terms. Verified by running both (2026-08-27 bench pass).
+- **A `HEAD` request to this service's HTTP endpoints hangs rather than answering** — verified
+  directly (`curl -I` against the source returns `200` in milliseconds; the identical request
+  against this port, on any endpoint including an unrelated JSON one, never returns). This is a
+  gap in the Akka SDK's dev-mode HTTP routing (no `@Head` annotation exists to declare one
+  explicitly), not application code, so nothing here can close it directly. The one place the
+  vendored frontend depended on `HEAD` (`login-wrapper.svelte`'s background-image existence
+  check) now uses `GET` instead — RENDERING R3's allowed data-layer diff — since a `GET` is
+  observably equivalent for that check and does not hang.
 
 ---
 

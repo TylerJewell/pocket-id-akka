@@ -87,11 +87,42 @@ public class AppConfigEndpoint extends AbstractHttpEndpoint {
 
   private static final java.util.Set<String> IMAGE_NAMES = java.util.Set.of("favicon", "logo", "email", "background", "default-profile-picture");
 
+  // backend/resources/images/ + app_images_bootstrap.go: the source copies these three bundled
+  // files into its image store on first boot, so a fresh install serves them before any admin
+  // ever uploads a replacement. Rather than a startup-time copy into a KeyValueEntity (no
+  // lifecycle hook runs application code before the first request here), getImage falls back to
+  // the bundled resource whenever nothing has been uploaded -- same visible result, checked by
+  // running both sides side by side (gui/manifest.json's R4 appearance comparison surfaced the
+  // 404 this fixes: the background pane was blank on the port and present on the source).
+  private static final Map<String, String> DEFAULT_IMAGE_RESOURCES = Map.of(
+      "background", "default-app-images/background.webp",
+      "favicon", "default-app-images/favicon.ico",
+      "email", "default-app-images/email.png");
+  private static final Map<String, String> DEFAULT_IMAGE_CONTENT_TYPES = Map.of(
+      "background", "image/webp",
+      "favicon", "image/x-icon",
+      "email", "image/png");
+
   @Get("/application-images/{name}")
   public HttpResponse getImage(String name) {
     if (!IMAGE_NAMES.contains(name)) return HttpResponse.create().withStatus(StatusCodes.NOT_FOUND);
     var blob = cc.forKeyValueEntity("app-image:" + name).method(BlobEntity::get).invoke();
-    if (blob.isEmpty()) return HttpResponse.create().withStatus(StatusCodes.NOT_FOUND);
+    if (blob.isEmpty()) {
+      // "never uploaded" gets the bundled default; "explicitly deleted" (BlobEntity's own
+      // tombstone) does not -- matching the source's one deletable bundled image (the
+      // background), which stays gone once removed rather than reappearing on next load.
+      if (blob.deleted()) return HttpResponse.create().withStatus(StatusCodes.NOT_FOUND);
+      var resourcePath = DEFAULT_IMAGE_RESOURCES.get(name);
+      if (resourcePath == null) return HttpResponse.create().withStatus(StatusCodes.NOT_FOUND);
+      try (var in = getClass().getClassLoader().getResourceAsStream(resourcePath)) {
+        if (in == null) return HttpResponse.create().withStatus(StatusCodes.NOT_FOUND);
+        byte[] bytes = in.readAllBytes();
+        var ct = akka.http.javadsl.model.ContentTypes.parse(DEFAULT_IMAGE_CONTENT_TYPES.get(name));
+        return HttpResponse.create().withEntity(ct, akka.util.ByteString.fromArray(bytes));
+      } catch (java.io.IOException e) {
+        return HttpResponse.create().withStatus(StatusCodes.NOT_FOUND);
+      }
+    }
     byte[] bytes = java.util.Base64.getDecoder().decode(blob.base64Data());
     var ct = akka.http.javadsl.model.ContentTypes.parse(blob.contentType() == null ? "image/png" : blob.contentType());
     return HttpResponse.create().withEntity(ct, akka.util.ByteString.fromArray(bytes));

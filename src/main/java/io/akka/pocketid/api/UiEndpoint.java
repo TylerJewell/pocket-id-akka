@@ -38,8 +38,13 @@ public class UiEndpoint {
     String path = request.getUri().path();
     // /akka/ is the runtime's own namespace; /api/ is this service's own API. Answering there
     // with the SPA shell would tell the runtime's health check a path it expects absent exists.
+    // /authorize excluded too: OidcEndpoint registers a real GET there (the protocol endpoint
+    // itself, not a page). /login is NOT excluded here -- OidcEndpoint's GET-vs-POST routing
+    // already separates it from that class's @Post("/login") test-login stand-in, and a
+    // browser opening /login directly (not just arriving there by client-side navigation from
+    // "/") needs the SPA shell the same as any other client-side route.
     if (path.startsWith("/akka/") || path.startsWith("/api/") || path.startsWith("/.well-known/")
-        || path.equals("/authorize") || path.equals("/login")) {
+        || path.equals("/authorize")) {
       return HttpResponses.notFound();
     }
     if (looksLikeAFile(path)) {
