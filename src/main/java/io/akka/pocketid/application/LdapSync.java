@@ -69,9 +69,9 @@ public final class LdapSync {
       long now = Instant.now().toEpochMilli();
       if (existing == null) {
         String id = UUID.randomUUID().toString();
-        cc.forKeyValueEntity(id).method(UserEntity::create).invoke(new UserEntity.Create(
+        cc.forKeyValueEntity(id).method(UserEntity::createFromLdap).invoke(new UserEntity.CreateFromLdap(
             id, username, attrValue(entry, attrEmail), attrValue(entry, attrFirst), attrValue(entry, attrLast),
-            null, false, List.of(), now));
+            ldapId, now));
       } else {
         cc.forKeyValueEntity(existing.id()).method(UserEntity::updateProfile).invoke(new UserEntity.UpdateProfile(
             username, attrValue(entry, attrEmail), attrValue(entry, attrFirst), attrValue(entry, attrLast),

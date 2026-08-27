@@ -13,6 +13,10 @@ public class UserEntity extends KeyValueEntity<User> {
       String id, String username, String email, String firstName, String lastName,
       String displayName, boolean isAdmin, List<String> groupIds, long nowMillis) {}
 
+  public record CreateFromLdap(
+      String id, String username, String email, String firstName, String lastName,
+      String ldapId, long nowMillis) {}
+
   public record UpdateProfile(
       String username, String email, String firstName, String lastName, String displayName,
       String locale, long nowMillis) {}
@@ -37,6 +41,18 @@ public class UserEntity extends KeyValueEntity<User> {
     var user = new User(
         cmd.id(), cmd.username(), cmd.email(), false, cmd.firstName(), cmd.lastName(),
         cmd.displayName(), cmd.isAdmin(), null, false, null, cmd.groupIds(), cmd.nowMillis(), cmd.nowMillis());
+    return effects().updateState(user).thenReply(user);
+  }
+
+  /** ldapsync's reconcile key: the LDAP entry's own unique-identifier attribute, so a later
+   * sync recognizes this user again by {@code ldapId} rather than creating a duplicate. */
+  public Effect<User> createFromLdap(CreateFromLdap cmd) {
+    if (currentState().id() != null) {
+      return effects().error("User already exists");
+    }
+    var user = new User(
+        cmd.id(), cmd.username(), cmd.email(), false, cmd.firstName(), cmd.lastName(),
+        null, false, null, false, cmd.ldapId(), List.of(), cmd.nowMillis(), cmd.nowMillis());
     return effects().updateState(user).thenReply(user);
   }
 
