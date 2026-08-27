@@ -123,6 +123,15 @@ public class WebAuthnEndpoint extends AbstractHttpEndpoint {
     return HttpResponses.ok(cc.forView().method(WebAuthnCredentialsView::byUser).invoke(u.id()).credentials());
   }
 
+  /** RENDERING.md R1 — the passkey-list screen subscribes to this instead of polling. */
+  @Get("/credentials/stream")
+  public HttpResponse streamCredentials() {
+    var u = AuthSupport.authenticatedUser(requestContext(), cc);
+    if (u == null) return HttpResponses.ok(Map.of("error", "unauthorized")).withStatus(StatusCodes.UNAUTHORIZED);
+    return SseSupport.stream(
+        () -> cc.forView().method(WebAuthnCredentialsView::byUser).invoke(u.id()).credentials());
+  }
+
   @Delete("/credentials/{id}")
   public HttpResponse deleteCredential(String id) {
     var u = AuthSupport.authenticatedUser(requestContext(), cc);

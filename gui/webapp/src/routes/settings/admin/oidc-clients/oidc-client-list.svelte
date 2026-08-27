@@ -163,6 +163,7 @@
 	id="oidc-client-list"
 	bind:this={tableRef}
 	fetchCallback={oidcService.listClients}
+	streamUrl={oidcService.streamUrl('/oidc/clients/stream')}
 	defaultSort={{ column: 'name', direction: 'asc' }}
 	{columns}
 	{actions}

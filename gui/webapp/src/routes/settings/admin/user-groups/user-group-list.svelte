@@ -86,6 +86,7 @@
 	id="user-group-list"
 	bind:this={tableRef}
 	fetchCallback={userGroupService.list}
+	streamUrl={userGroupService.streamUrl('/user-groups/stream')}
 	defaultSort={{ column: 'friendlyName', direction: 'asc' }}
 	{columns}
 	{actions}

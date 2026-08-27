@@ -13,7 +13,7 @@
 	import { cn } from '$lib/utils/style';
 	import { ChevronDown, LucideEllipsis } from '@lucide/svelte';
 	import { PersistedState } from 'runed';
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import Button, { buttonVariants } from '../ui/button/button.svelte';
 	import * as DropdownMenu from '../ui/dropdown-menu/index.js';
@@ -28,6 +28,7 @@
 		onRowClick,
 		rowSelectionDisabled,
 		fetchCallback,
+		streamUrl,
 		defaultSort,
 		columns,
 		actions
@@ -38,6 +39,10 @@
 		selectionDisabled?: boolean;
 		rowSelectionDisabled?: (item: T) => boolean;
 		fetchCallback: (requestOptions: ListRequestOptions) => Promise<Paginated<T>>;
+		// The stream this table subscribes to for background updates, in place of polling
+		// (RENDERING.md R1). Optional: a table with no stream endpoint yet still works, fetching
+		// only on navigation and explicit user action, exactly as before this prop existed.
+		streamUrl?: string;
 		defaultSort?: SortRequest;
 		columns: AdvancedTableColumn<T>[];
 		onRowClick?: (item: T) => void;
@@ -75,6 +80,8 @@
 		)
 	);
 
+	let eventSource: EventSource | undefined;
+
 	onMount(async () => {
 		const urlParams = new URLSearchParams(window.location.search);
 		const page = parseInt(urlParams.get(`${id}-page`) ?? '') || undefined;
@@ -82,6 +89,25 @@
 			requestOptions.pagination!.page = page;
 		}
 		await refresh();
+
+		// RENDERING.md R1: once the first page has painted from the fetch above, a table backed
+		// by a stream endpoint switches to watching it for background changes (another admin
+		// editing the same collection) instead of ever polling. A dropped connection is handled
+		// by the browser's own EventSource retry, whose next frame is always the whole current
+		// state (SseSupport.java on the backend never emits a delta), so no replay position is
+		// needed on reconnect (R1.3).
+		if (streamUrl) {
+			eventSource = new EventSource(streamUrl);
+			eventSource.onmessage = (event) => {
+				const pushed = JSON.parse(event.data) as Paginated<T>;
+				items = pushed;
+				updateListLength(pushed.pagination.totalItems);
+			};
+		}
+	});
+
+	onDestroy(() => {
+		eventSource?.close();
 	});
 
 	let allChecked = $derived.by(() => {

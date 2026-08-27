@@ -188,6 +188,7 @@
 	id="user-list"
 	bind:this={tableRef}
 	fetchCallback={userService.list}
+	streamUrl={userService.streamUrl('/users/stream')}
 	{actions}
 	{columns}
 />

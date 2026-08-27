@@ -46,6 +46,15 @@ public class ApiKeyEndpoint extends AbstractHttpEndpoint {
     return HttpResponses.ok(Dtos.page(keys));
   }
 
+  /** RENDERING.md R1 — the api-key-list screen subscribes to this instead of polling. */
+  @Get("/api-keys/stream")
+  public HttpResponse stream() {
+    var u = requireSession();
+    if (u == null) return HttpResponses.ok(java.util.Map.of("error", "unauthorized")).withStatus(StatusCodes.UNAUTHORIZED);
+    return SseSupport.stream(
+        () -> Dtos.page(cc.forView().method(ApiKeysView::byUser).invoke(u.id()).keys()));
+  }
+
   public record CreateApiKeyRequest(String name, String description, long expiresAtMillis) {}
 
   @Post("/api-keys")

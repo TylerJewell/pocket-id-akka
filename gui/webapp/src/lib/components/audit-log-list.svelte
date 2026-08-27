@@ -116,6 +116,7 @@
 					filters: wrapFilters(filters)
 				})
 			: await auditLogService.list(options)}
+	streamUrl={auditLogService.streamUrl(isAdmin ? '/audit-logs/all/stream' : '/audit-logs/stream')}
 	defaultSort={{ column: 'createdAt', direction: 'desc' }}
 	withoutSearch
 	{columns}

@@ -74,6 +74,15 @@ public class UserEndpoint extends AbstractHttpEndpoint {
     return HttpResponses.ok(Dtos.page(users));
   }
 
+  /** RENDERING.md R1 — the user-list screen subscribes to this instead of polling. */
+  @Get("/users/stream")
+  public HttpResponse stream() {
+    var forbidden = requireAdmin();
+    if (forbidden != null) return forbidden;
+    return SseSupport.stream(
+        () -> Dtos.page(cc.forView().method(UsersView::all).invoke().users().stream().map(this::toDto).toList()));
+  }
+
   @Get("/users/me")
   public HttpResponse myself() {
     var u = me();

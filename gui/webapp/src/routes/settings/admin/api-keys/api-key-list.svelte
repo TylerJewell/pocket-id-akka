@@ -128,6 +128,7 @@
 	id="api-key-list"
 	bind:this={tableRef}
 	fetchCallback={apiKeyService.list}
+	streamUrl={apiKeyService.streamUrl('/api-keys/stream')}
 	defaultSort={{ column: 'lastUsedAt', direction: 'desc' }}
 	withoutSearch
 	{columns}

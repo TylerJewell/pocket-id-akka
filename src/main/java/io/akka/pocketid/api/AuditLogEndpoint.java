@@ -38,6 +38,24 @@ public class AuditLogEndpoint extends AbstractHttpEndpoint {
     return HttpResponses.ok(Dtos.page(entries));
   }
 
+  /** RENDERING.md R1 — the self audit-log screen subscribes to this instead of polling. */
+  @Get("/audit-logs/stream")
+  public HttpResponse stream() {
+    var u = AuthSupport.authenticatedUser(requestContext(), cc);
+    if (u == null) return HttpResponses.ok(Map.of("error", "unauthorized")).withStatus(StatusCodes.UNAUTHORIZED);
+    return SseSupport.stream(
+        () -> Dtos.page(cc.forView().method(AuditLogsView::byUser).invoke(u.id()).entries()));
+  }
+
+  /** RENDERING.md R1 — the global audit-log screen (admin) subscribes to this instead of polling. */
+  @Get("/audit-logs/all/stream")
+  public HttpResponse allStream() {
+    var u = AuthSupport.authenticatedUser(requestContext(), cc);
+    if (u == null) return HttpResponses.ok(Map.of("error", "unauthorized")).withStatus(StatusCodes.UNAUTHORIZED);
+    if (!u.isAdmin()) return HttpResponses.ok(Map.of("error", "forbidden")).withStatus(StatusCodes.FORBIDDEN);
+    return SseSupport.stream(() -> Dtos.page(cc.forView().method(AuditLogsView::all).invoke().entries()));
+  }
+
   @Get("/audit-logs/filters/client-names")
   public HttpResponse clientNames() {
     var entries = cc.forView().method(AuditLogsView::all).invoke().entries();

@@ -1,1 +1,0 @@
-import{D as e,u as t}from"./DEAjIYsM.js";import"./kr8lFKCN.js";function n(n){e(()=>t(()=>n()))}export{n as t};

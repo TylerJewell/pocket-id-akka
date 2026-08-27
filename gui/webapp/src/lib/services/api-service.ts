@@ -8,6 +8,9 @@ const requestSpans = new WeakMap<InternalAxiosRequestConfig, Span>();
 abstract class APIService {
 	protected api = axios.create({ baseURL: '/api' });
 
+	// The stream a list view subscribes to in place of fetch-on-navigate polling (RENDERING.md R1).
+	streamUrl = (path: string) => `${this.api.defaults.baseURL ?? ''}${path}`;
+
 	constructor() {
 		if (typeof process !== 'undefined' && process?.env?.DEVELOPMENT_BACKEND_URL) {
 			this.api.defaults.baseURL = process.env.DEVELOPMENT_BACKEND_URL;

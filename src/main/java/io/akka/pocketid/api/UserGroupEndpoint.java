@@ -53,6 +53,15 @@ public class UserGroupEndpoint extends AbstractHttpEndpoint {
     return HttpResponses.ok(Dtos.page(groups));
   }
 
+  /** RENDERING.md R1 — the group-list screen subscribes to this instead of polling. */
+  @Get("/user-groups/stream")
+  public HttpResponse stream() {
+    var forbidden = requireAdmin();
+    if (forbidden != null) return forbidden;
+    return SseSupport.stream(
+        () -> Dtos.page(cc.forView().method(UserGroupsView::all).invoke().groups().stream().map(this::toDto).toList()));
+  }
+
   @Get("/user-groups/{id}")
   public HttpResponse get(String id) {
     var forbidden = requireAdmin();

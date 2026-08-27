@@ -1,0 +1,1 @@
+import{o as e,s as t}from"./DUcBLtv6.js";import"./xihTtKlq.js";import{t as n}from"./D19tcLSR.js";var r=new Set([`$$slots`,`$$events`,`$$legacy`]);function i(i,a){let o=e(a,r),s=[[`circle`,{cx:`12`,cy:`12`,r:`10`}],[`path`,{d:`m15 9-6 6`}],[`path`,{d:`m9 9 6 6`}]];n(i,t({name:`circle-x`},()=>o,{get iconNode(){return s}}))}export{i as t};

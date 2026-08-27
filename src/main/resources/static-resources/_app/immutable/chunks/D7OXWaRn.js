@@ -1,1 +1,0 @@
-import{r as e,t}from"./TO2y4gVw.js";import"./CEG5M5k-.js";var n=n=>{let r;return t(e=>{e.from&&(r=e.from.url)}),{go:()=>{r&&r.pathname===n?window.history.back():e(n)}}};export{n as t};

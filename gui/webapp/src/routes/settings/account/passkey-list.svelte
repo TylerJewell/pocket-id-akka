@@ -7,6 +7,7 @@
 	import type { Passkey } from '$lib/types/passkey.type';
 	import { axiosErrorToast } from '$lib/utils/error-util';
 	import { LucideKeyRound } from '@lucide/svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import RenamePasskeyModal from './rename-passkey-modal.svelte';
 
@@ -15,6 +16,17 @@
 	const webauthnService = new WebauthnService();
 
 	let passkeyToRename: Passkey | null = $state(null);
+
+	// RENDERING.md R1 — watches for a passkey added/removed elsewhere (another tab, another
+	// device) instead of only refreshing after this tab's own mutations.
+	let eventSource: EventSource | undefined;
+	onMount(() => {
+		eventSource = new EventSource(webauthnService.streamUrl('/credentials/stream'));
+		eventSource.onmessage = (event) => {
+			passkeys = JSON.parse(event.data) as Passkey[];
+		};
+	});
+	onDestroy(() => eventSource?.close());
 
 	async function deletePasskey(passkey: Passkey) {
 		openConfirmDialog({

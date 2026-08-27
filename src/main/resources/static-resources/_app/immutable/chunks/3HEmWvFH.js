@@ -1,0 +1,1 @@
+import{o as e,s as t}from"./DUcBLtv6.js";import"./xihTtKlq.js";import{t as n}from"./D19tcLSR.js";var r=new Set([`$$slots`,`$$events`,`$$legacy`]);function i(i,a){let o=e(a,r),s=[[`circle`,{cx:`12`,cy:`12`,r:`10`}],[`path`,{d:`M4.929 4.929 19.07 19.071`}]];n(i,t({name:`ban`},()=>o,{get iconNode(){return s}}))}export{i as t};

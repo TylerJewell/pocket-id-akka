@@ -214,10 +214,17 @@ like mistakes. `specs/SPEC-001-pocket-id.md` §1 has the reasoning for each in f
   Registration and login both perform real signature verification (`webauthn4j`); they do not
   check an authenticator's attestation certificate against a trust store the way a
   high-assurance deployment might.
-- **No server-sent stream for admin-UI list views** (RENDERING R1). Every list (users,
-  groups, clients, audit log, API keys) is fetch-on-navigate, matching the source's own
-  SvelteKit data-loading pattern — R1 was not reached this session; see
-  `pocket-id-port/gui/manifest.json`'s `R1_streaming` note.
+- **Admin-UI list views are stream-fed, which the source's own screens never were**
+  (RENDERING R1). Users, groups, clients, both audit-log screens, and the self-service
+  passkey list subscribe to a Server-Sent-Events stream (`SseSupport.java`) instead of
+  fetching once on navigation; a dropped connection is handled by the browser's own
+  `EventSource` retry, whose next frame is always whole current state. Two secondary
+  screens (an admin viewing one user's passkeys, and the signup-token list modal) are not
+  yet wired to a stream — see `pocket-id-port/gui/manifest.json`'s `R1_streaming` note.
+- **Admin list endpoints ignore search/sort/pagination parameters** and always return the
+  whole collection as a single page, unlike the source's server-side paged queries. Invisible
+  at the collection sizes this port's own tests exercise; a real divergence at scale. See
+  SPEC-001 §1's narrowed-list entry for this.
 - **SCIM push is simplified**: always a full create-or-replace per user rather than the
   source's last-modified diff, and providers sync one at a time rather than up to four
   concurrently.

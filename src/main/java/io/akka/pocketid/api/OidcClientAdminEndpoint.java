@@ -46,6 +46,15 @@ public class OidcClientAdminEndpoint extends AbstractHttpEndpoint {
     return HttpResponses.ok(Dtos.page(cc.forView().method(OidcClientsView::all).invoke().clients()));
   }
 
+  /** RENDERING.md R1 — the client-list screen subscribes to this instead of polling. */
+  @Get("/oidc/clients/stream")
+  public HttpResponse stream() {
+    var forbidden = requireAdmin();
+    if (forbidden != null) return forbidden;
+    return SseSupport.stream(
+        () -> Dtos.page(cc.forView().method(OidcClientsView::all).invoke().clients()));
+  }
+
   @Get("/oidc/clients/{id}")
   public HttpResponse get(String id) {
     var forbidden = requireAdmin();
