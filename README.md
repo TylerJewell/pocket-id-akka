@@ -232,6 +232,21 @@ like mistakes. `specs/SPEC-001-pocket-id.md` §1 has the reasoning for each in f
 - **LDAP sync is simplified**: reconciles by unique-identifier attribute; the source's DN-cache
   and posixGroup member-resolution fallbacks, admin-group derivation, and profile-picture
   download over LDAP are not implemented.
+- **`/authorize` reports an unknown `client_id` as a JSON 400, not a browser redirect.** The
+  source responds `302` to its own `/interaction/error?error=...` page even for a client the
+  server has never heard of; this port returns the error as JSON directly, since it has no
+  server-rendered error page for the vendored SvelteKit frontend to redirect into. Verified by
+  running both against the same request (2026-08-27 bench pass).
+- **`end-session` on an unregistered `client_id` is a `400`, not a silent `302` to `/logout`.**
+  The source ignores an invalid `client_id`/`post_logout_redirect_uri` pair on RP-initiated
+  logout and redirects to its generic logout page regardless; this port validates the pair and
+  rejects it, which is the stricter (and, for an unregistered redirect target, safer) of the
+  two readings of the OIDC RP-Initiated Logout spec. Verified by running both (2026-08-27 bench
+  pass).
+- **Token introspection with no bearer credentials reports `invalid_client`, not
+  `request_unauthorized`.** Both return `401`; the source's message names the missing
+  `Authorization` header specifically, this port's names the failed client authentication in
+  general terms. Verified by running both (2026-08-27 bench pass).
 
 ---
 

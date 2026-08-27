@@ -149,7 +149,7 @@ public class OidcEndpoint extends AbstractHttpEndpoint {
     String clientId = q.getString("client_id").orElse("");
     OidcClient client = clientById(clientId);
     if (client == null) {
-      return errorJson(StatusCodes.BAD_REQUEST, "invalid_client", "The requested OAuth 2.0 Client does not exist.");
+      return errorJson(StatusCodes.UNAUTHORIZED, "invalid_client", "The requested OAuth 2.0 Client does not exist.");
     }
     String requestUri = "urn:ietf:params:oauth:request_uri:" + randomToken(24);
     long expiresAt = Instant.now().toEpochMilli() + PAR_TTL_MILLIS;
@@ -572,7 +572,7 @@ public class OidcEndpoint extends AbstractHttpEndpoint {
     var q = requestContext().queryParams();
     String clientId = q.getString("client_id").orElse("");
     if (clientById(clientId) == null) {
-      return errorJson(StatusCodes.BAD_REQUEST, "invalid_client", "The requested OAuth 2.0 Client does not exist.");
+      return errorJson(StatusCodes.UNAUTHORIZED, "invalid_client", "The requested OAuth 2.0 Client does not exist.");
     }
     String deviceCode = UUID.randomUUID().toString();
     String userCode = randomUserCode();
