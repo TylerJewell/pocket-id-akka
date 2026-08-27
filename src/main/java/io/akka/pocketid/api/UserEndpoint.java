@@ -66,21 +66,49 @@ public class UserEndpoint extends AbstractHttpEndpoint {
 
   // ---- listing / self ---------------------------------------------------------------------
 
+  private static final java.util.Map<String, java.util.Comparator<Dtos.UserDto>> USER_SORT = java.util.Map.of(
+      "firstName", java.util.Comparator.comparing(Dtos.UserDto::firstName, String.CASE_INSENSITIVE_ORDER),
+      "lastName", java.util.Comparator.comparing(Dtos.UserDto::lastName, String.CASE_INSENSITIVE_ORDER),
+      "displayName", java.util.Comparator.comparing(Dtos.UserDto::displayName, String.CASE_INSENSITIVE_ORDER),
+      "email", java.util.Comparator.comparing(Dtos.UserDto::email, String.CASE_INSENSITIVE_ORDER),
+      "username", java.util.Comparator.comparing(Dtos.UserDto::username, String.CASE_INSENSITIVE_ORDER),
+      "isAdmin", java.util.Comparator.comparing(Dtos.UserDto::isAdmin),
+      "disabled", java.util.Comparator.comparing(Dtos.UserDto::disabled));
+
+  private boolean userMatches(Dtos.UserDto u, String search) {
+    String needle = search.toLowerCase();
+    return u.email().toLowerCase().contains(needle)
+        || u.firstName().toLowerCase().contains(needle)
+        || u.lastName().toLowerCase().contains(needle)
+        || u.username().toLowerCase().contains(needle);
+  }
+
+  private static final java.util.Map<String, java.util.function.Function<Dtos.UserDto, String>> USER_FILTERS =
+      java.util.Map.of(
+          "isAdmin", u -> String.valueOf(u.isAdmin()),
+          "disabled", u -> String.valueOf(u.disabled()));
+
   @Get("/users")
   public HttpResponse list() {
     var forbidden = requireAdmin();
     if (forbidden != null) return forbidden;
     var users = cc.forView().method(UsersView::all).invoke().users().stream().map(this::toDto).toList();
-    return HttpResponses.ok(Dtos.page(users));
+    var params = ListQueryParams.from(requestContext());
+    return HttpResponses.ok(params.apply(users, u -> userMatches(u, params.search), USER_SORT, USER_FILTERS));
   }
 
-  /** RENDERING.md R1 — the user-list screen subscribes to this instead of polling. */
+  /** RENDERING.md R1 — the user-list screen subscribes to this instead of polling. Streamed
+   * snapshots are re-filtered/sorted/paged against the params captured when the client opened
+   * the connection, since an SSE subscription has no per-frame request to re-read them from. */
   @Get("/users/stream")
   public HttpResponse stream() {
     var forbidden = requireAdmin();
     if (forbidden != null) return forbidden;
-    return SseSupport.stream(
-        () -> Dtos.page(cc.forView().method(UsersView::all).invoke().users().stream().map(this::toDto).toList()));
+    var params = ListQueryParams.from(requestContext());
+    return SseSupport.stream(() -> {
+      var users = cc.forView().method(UsersView::all).invoke().users().stream().map(this::toDto).toList();
+      return params.apply(users, u -> userMatches(u, params.search), USER_SORT, USER_FILTERS);
+    });
   }
 
   @Get("/users/me")
@@ -181,6 +209,17 @@ public class UserEndpoint extends AbstractHttpEndpoint {
     var forbidden = requireAdmin();
     if (forbidden != null) return forbidden;
     return HttpResponses.ok(cc.forView().method(io.akka.pocketid.application.WebAuthnCredentialsView::byUser).invoke(id).credentials());
+  }
+
+  /** RENDERING.md R1 — admin-passkey-list.svelte subscribes to this instead of polling. Same raw
+   * array shape as {@link #credentials(String)}, since that component reads its list as a plain
+   * prop rather than through AdvancedTable's Page envelope. */
+  @Get("/users/{id}/webauthn-credentials/stream")
+  public HttpResponse credentialsStream(String id) {
+    var forbidden = requireAdmin();
+    if (forbidden != null) return forbidden;
+    return SseSupport.stream(
+        () -> cc.forView().method(io.akka.pocketid.application.WebAuthnCredentialsView::byUser).invoke(id).credentials());
   }
 
   @Delete("/users/{id}/webauthn-credentials/{credentialId}")

@@ -109,6 +109,13 @@ public class SignupEndpoint extends AbstractHttpEndpoint {
     return HttpResponses.ok(Dtos.page(cc.forView().method(SignupTokensView::all).invoke().tokens()));
   }
 
+  /** RENDERING.md R1 — signup-token-list-modal.svelte subscribes to this instead of polling. */
+  @Get("/signup-tokens/stream")
+  public HttpResponse tokensStream() {
+    if (!isAdmin()) return HttpResponses.ok(Map.of("error", "forbidden")).withStatus(StatusCodes.FORBIDDEN);
+    return SseSupport.stream(() -> Dtos.page(cc.forView().method(SignupTokensView::all).invoke().tokens()));
+  }
+
   @Delete("/signup-tokens/{id}")
   public HttpResponse deleteToken(String id) {
     if (!isAdmin()) return HttpResponses.ok(Map.of("error", "forbidden")).withStatus(StatusCodes.FORBIDDEN);

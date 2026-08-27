@@ -45,12 +45,23 @@ public class UserGroupEndpoint extends AbstractHttpEndpoint {
     return new Dtos.UserGroupDto(g.id(), g.name(), g.friendlyName(), users, claims);
   }
 
+  private static final java.util.Map<String, java.util.Comparator<Dtos.UserGroupDto>> GROUP_SORT = java.util.Map.of(
+      "friendlyName", java.util.Comparator.comparing(Dtos.UserGroupDto::friendlyName, String.CASE_INSENSITIVE_ORDER),
+      "name", java.util.Comparator.comparing(Dtos.UserGroupDto::name, String.CASE_INSENSITIVE_ORDER),
+      "userCount", java.util.Comparator.comparingInt(g -> g.users().size()));
+
+  private boolean groupMatches(Dtos.UserGroupDto g, String search) {
+    String needle = search.toLowerCase();
+    return g.name().toLowerCase().contains(needle) || g.friendlyName().toLowerCase().contains(needle);
+  }
+
   @Get("/user-groups")
   public HttpResponse list() {
     var forbidden = requireAdmin();
     if (forbidden != null) return forbidden;
     var groups = cc.forView().method(UserGroupsView::all).invoke().groups().stream().map(this::toDto).toList();
-    return HttpResponses.ok(Dtos.page(groups));
+    var params = ListQueryParams.from(requestContext());
+    return HttpResponses.ok(params.apply(groups, g -> groupMatches(g, params.search), GROUP_SORT));
   }
 
   /** RENDERING.md R1 — the group-list screen subscribes to this instead of polling. */
@@ -58,8 +69,11 @@ public class UserGroupEndpoint extends AbstractHttpEndpoint {
   public HttpResponse stream() {
     var forbidden = requireAdmin();
     if (forbidden != null) return forbidden;
-    return SseSupport.stream(
-        () -> Dtos.page(cc.forView().method(UserGroupsView::all).invoke().groups().stream().map(this::toDto).toList()));
+    var params = ListQueryParams.from(requestContext());
+    return SseSupport.stream(() -> {
+      var groups = cc.forView().method(UserGroupsView::all).invoke().groups().stream().map(this::toDto).toList();
+      return params.apply(groups, g -> groupMatches(g, params.search), GROUP_SORT);
+    });
   }
 
   @Get("/user-groups/{id}")

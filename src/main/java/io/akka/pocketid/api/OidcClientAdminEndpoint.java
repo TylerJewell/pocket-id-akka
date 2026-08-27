@@ -39,11 +39,25 @@ public class OidcClientAdminEndpoint extends AbstractHttpEndpoint {
     return null;
   }
 
+  private static final Map<String, java.util.Comparator<OidcClient>> CLIENT_SORT = Map.of(
+      "name", java.util.Comparator.comparing(OidcClient::name, String.CASE_INSENSITIVE_ORDER));
+
+  private static final Map<String, java.util.function.Function<OidcClient, String>> CLIENT_FILTERS = Map.of(
+      "isGroupRestricted", c -> String.valueOf(c.isGroupRestricted()),
+      "isPublic", c -> String.valueOf(c.isPublic()));
+
+  private boolean clientMatches(OidcClient c, String search) {
+    String needle = search.toLowerCase();
+    return c.name().toLowerCase().contains(needle) || c.description().toLowerCase().contains(needle);
+  }
+
   @Get("/oidc/clients")
   public HttpResponse list() {
     var forbidden = requireAdmin();
     if (forbidden != null) return forbidden;
-    return HttpResponses.ok(Dtos.page(cc.forView().method(OidcClientsView::all).invoke().clients()));
+    var clients = cc.forView().method(OidcClientsView::all).invoke().clients();
+    var params = ListQueryParams.from(requestContext());
+    return HttpResponses.ok(params.apply(clients, c -> clientMatches(c, params.search), CLIENT_SORT, CLIENT_FILTERS));
   }
 
   /** RENDERING.md R1 — the client-list screen subscribes to this instead of polling. */
@@ -51,8 +65,11 @@ public class OidcClientAdminEndpoint extends AbstractHttpEndpoint {
   public HttpResponse stream() {
     var forbidden = requireAdmin();
     if (forbidden != null) return forbidden;
-    return SseSupport.stream(
-        () -> Dtos.page(cc.forView().method(OidcClientsView::all).invoke().clients()));
+    var params = ListQueryParams.from(requestContext());
+    return SseSupport.stream(() -> {
+      var clients = cc.forView().method(OidcClientsView::all).invoke().clients();
+      return params.apply(clients, c -> clientMatches(c, params.search), CLIENT_SORT, CLIENT_FILTERS);
+    });
   }
 
   @Get("/oidc/clients/{id}")

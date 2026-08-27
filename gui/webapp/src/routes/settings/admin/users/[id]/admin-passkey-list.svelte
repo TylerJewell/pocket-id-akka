@@ -7,6 +7,7 @@
 	import type { Passkey } from '$lib/types/passkey.type';
 	import { axiosErrorToast } from '$lib/utils/error-util';
 	import { LucideKeyRound } from '@lucide/svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	let {
@@ -22,6 +23,17 @@
 	async function refreshPasskeys() {
 		passkeys = await userService.listUserPasskeys(userId);
 	}
+
+	// RENDERING.md R1 — watches for a passkey added/removed elsewhere instead of only
+	// refreshing after this tab's own delete action.
+	let eventSource: EventSource | undefined;
+	onMount(() => {
+		eventSource = new EventSource(userService.streamUrl(`/users/${userId}/webauthn-credentials/stream`));
+		eventSource.onmessage = (event) => {
+			passkeys = JSON.parse(event.data) as Passkey[];
+		};
+	});
+	onDestroy(() => eventSource?.close());
 
 	function deletePasskey(passkey: Passkey) {
 		openConfirmDialog({

@@ -172,6 +172,7 @@
 				id="signup-token-list"
 				withoutSearch={true}
 				fetchCallback={userService.listSignupTokens}
+				streamUrl={userService.streamUrl('/signup-tokens/stream')}
 				defaultSort={{ column: 'createdAt', direction: 'asc' }}
 				bind:this={tableRef}
 				{columns}

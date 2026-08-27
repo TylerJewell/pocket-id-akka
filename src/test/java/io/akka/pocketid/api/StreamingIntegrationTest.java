@@ -42,7 +42,7 @@ public class StreamingIntegrationTest extends TestKitSupport {
    * or gives up after {@code deadline}. The TestKit's own {@code httpClient} returns a single
    * parsed body, not a long-lived stream, so this uses the JDK's client directly against the
    * same {@code testKit.getPort()} the SDK client talks to. */
-  private static String readFrameUntil(String path, String sessionId, java.util.function.Predicate<String> until, Duration deadline)
+  static String readFrameUntil(String path, String sessionId, java.util.function.Predicate<String> until, Duration deadline)
       throws Exception {
     // A tick that finds no change writes nothing to the response at all (SseSupport dedups), so
     // a genuinely broken endpoint would otherwise block this thread on the socket read forever.

@@ -38,12 +38,27 @@ public class ApiKeyEndpoint extends AbstractHttpEndpoint {
     return "pid_" + Base64.getUrlEncoder().withoutPadding().encodeToString(b);
   }
 
+  private static final java.util.Map<String, java.util.Comparator<io.akka.pocketid.domain.ApiKeyRecord>> API_KEY_SORT =
+      java.util.Map.of(
+          "name", java.util.Comparator.comparing(io.akka.pocketid.domain.ApiKeyRecord::name, String.CASE_INSENSITIVE_ORDER),
+          "expiresAt", java.util.Comparator.comparingLong(io.akka.pocketid.domain.ApiKeyRecord::expiresAtMillis),
+          "lastUsedAt", java.util.Comparator.comparing(
+              io.akka.pocketid.domain.ApiKeyRecord::lastUsedAtMillis,
+              java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())),
+          "createdAt", java.util.Comparator.comparingLong(io.akka.pocketid.domain.ApiKeyRecord::createdAtMillis));
+
+  private boolean apiKeyMatches(io.akka.pocketid.domain.ApiKeyRecord k, String search) {
+    String needle = search.toLowerCase();
+    return k.name().toLowerCase().contains(needle) || k.description().toLowerCase().contains(needle);
+  }
+
   @Get("/api-keys")
   public HttpResponse list() {
     var u = requireSession();
     if (u == null) return HttpResponses.ok(java.util.Map.of("error", "unauthorized")).withStatus(StatusCodes.UNAUTHORIZED);
     var keys = cc.forView().method(ApiKeysView::byUser).invoke(u.id()).keys();
-    return HttpResponses.ok(Dtos.page(keys));
+    var params = ListQueryParams.from(requestContext());
+    return HttpResponses.ok(params.apply(keys, k -> apiKeyMatches(k, params.search), API_KEY_SORT));
   }
 
   /** RENDERING.md R1 — the api-key-list screen subscribes to this instead of polling. */
@@ -51,8 +66,11 @@ public class ApiKeyEndpoint extends AbstractHttpEndpoint {
   public HttpResponse stream() {
     var u = requireSession();
     if (u == null) return HttpResponses.ok(java.util.Map.of("error", "unauthorized")).withStatus(StatusCodes.UNAUTHORIZED);
-    return SseSupport.stream(
-        () -> Dtos.page(cc.forView().method(ApiKeysView::byUser).invoke(u.id()).keys()));
+    var params = ListQueryParams.from(requestContext());
+    return SseSupport.stream(() -> {
+      var keys = cc.forView().method(ApiKeysView::byUser).invoke(u.id()).keys();
+      return params.apply(keys, k -> apiKeyMatches(k, params.search), API_KEY_SORT);
+    });
   }
 
   public record CreateApiKeyRequest(String name, String description, long expiresAtMillis) {}

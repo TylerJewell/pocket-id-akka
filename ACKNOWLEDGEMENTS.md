@@ -20,7 +20,10 @@ error-response shapes (for example `{"error":"invalid_client","error_description
 established by running the real source in Docker —
 `pocket-id-port/docs/question-log.md`, `pocket-id-port/probes/probe_01.py`); the ~90 HTTP
 route paths under `/api/*` the vendored frontend's own `api-service.ts` already calls
-(`internal/bootstrap/router_bootstrap.go`); the `AppConfigDefaults` configuration-key
+(`internal/bootstrap/router_bootstrap.go`); the `search`/`sort[column]`/`sort[direction]`/
+`pagination[page]`/`pagination[limit]`/`filters[field][i]` query-parameter names
+`list-request.type.ts`'s `ListRequestOptions` already sends on every admin list request
+(`ListQueryParams.java`, added 2026-08-27 to read them server-side); the `AppConfigDefaults` configuration-key
 names (`sessionDuration`, `webauthnUserVerification`, `smtpPassword`, and the rest of the
 ~40-key set) the same frontend's settings screens already read and write by name; and
 standard-protocol literals this port did not invent (LDAP filter syntax, SCIM's

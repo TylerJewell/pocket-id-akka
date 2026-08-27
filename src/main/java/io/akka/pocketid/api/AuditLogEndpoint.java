@@ -21,12 +21,43 @@ public class AuditLogEndpoint extends AbstractHttpEndpoint {
 
   public AuditLogEndpoint(ComponentClient cc) { this.cc = cc; }
 
+  private static final java.util.Map<String, java.util.Comparator<io.akka.pocketid.domain.AuditLogEntry>> AUDIT_SORT =
+      java.util.Map.of(
+          "createdAt", java.util.Comparator.comparingLong(io.akka.pocketid.domain.AuditLogEntry::createdAtMillis),
+          "event", java.util.Comparator.comparing(io.akka.pocketid.domain.AuditLogEntry::event, String.CASE_INSENSITIVE_ORDER),
+          "ipAddress", java.util.Comparator.comparing(io.akka.pocketid.domain.AuditLogEntry::ipAddress, String.CASE_INSENSITIVE_ORDER),
+          "device", java.util.Comparator.comparing(io.akka.pocketid.domain.AuditLogEntry::userAgent, String.CASE_INSENSITIVE_ORDER));
+
+  // AuditLogFilter (audit-log.type.ts): userID, event, clientName. `location` (country/city) has
+  // no equivalent field on AuditLogEntry, so it is not wired — filterableFields simply omits it,
+  // which leaves that one key inert the same way every filter key was before this pass.
+  private static final java.util.Map<String, java.util.function.Function<io.akka.pocketid.domain.AuditLogEntry, String>>
+      AUDIT_FILTERS = java.util.Map.of(
+          "userID", io.akka.pocketid.domain.AuditLogEntry::userId,
+          "event", io.akka.pocketid.domain.AuditLogEntry::event,
+          "clientName", e -> e.clientName() == null ? "" : e.clientName());
+
+  private boolean auditLogMatches(io.akka.pocketid.domain.AuditLogEntry e, String search) {
+    String needle = search.toLowerCase();
+    return e.event().toLowerCase().contains(needle)
+        || e.username().toLowerCase().contains(needle)
+        || (e.clientName() != null && e.clientName().toLowerCase().contains(needle))
+        || e.ipAddress().toLowerCase().contains(needle);
+  }
+
+  /** Applies search/filters/sort/pagination, defaulting to the view's own newest-first order
+   * when no client sort was requested — the view's ORDER BY is what {@code AuditLogsView} always had. */
+  private Dtos.Page<io.akka.pocketid.domain.AuditLogEntry> paged(
+      java.util.List<io.akka.pocketid.domain.AuditLogEntry> entries, ListQueryParams params) {
+    return params.apply(entries, e -> auditLogMatches(e, params.search), AUDIT_SORT, AUDIT_FILTERS);
+  }
+
   @Get("/audit-logs")
   public HttpResponse mine() {
     var u = AuthSupport.authenticatedUser(requestContext(), cc);
     if (u == null) return HttpResponses.ok(Map.of("error", "unauthorized")).withStatus(StatusCodes.UNAUTHORIZED);
     var entries = cc.forView().method(AuditLogsView::byUser).invoke(u.id()).entries();
-    return HttpResponses.ok(Dtos.page(entries));
+    return HttpResponses.ok(paged(entries, ListQueryParams.from(requestContext())));
   }
 
   @Get("/audit-logs/all")
@@ -35,7 +66,7 @@ public class AuditLogEndpoint extends AbstractHttpEndpoint {
     if (u == null) return HttpResponses.ok(Map.of("error", "unauthorized")).withStatus(StatusCodes.UNAUTHORIZED);
     if (!u.isAdmin()) return HttpResponses.ok(Map.of("error", "forbidden")).withStatus(StatusCodes.FORBIDDEN);
     var entries = cc.forView().method(AuditLogsView::all).invoke().entries();
-    return HttpResponses.ok(Dtos.page(entries));
+    return HttpResponses.ok(paged(entries, ListQueryParams.from(requestContext())));
   }
 
   /** RENDERING.md R1 — the self audit-log screen subscribes to this instead of polling. */
@@ -43,8 +74,9 @@ public class AuditLogEndpoint extends AbstractHttpEndpoint {
   public HttpResponse stream() {
     var u = AuthSupport.authenticatedUser(requestContext(), cc);
     if (u == null) return HttpResponses.ok(Map.of("error", "unauthorized")).withStatus(StatusCodes.UNAUTHORIZED);
+    var params = ListQueryParams.from(requestContext());
     return SseSupport.stream(
-        () -> Dtos.page(cc.forView().method(AuditLogsView::byUser).invoke(u.id()).entries()));
+        () -> paged(cc.forView().method(AuditLogsView::byUser).invoke(u.id()).entries(), params));
   }
 
   /** RENDERING.md R1 — the global audit-log screen (admin) subscribes to this instead of polling. */
@@ -53,7 +85,8 @@ public class AuditLogEndpoint extends AbstractHttpEndpoint {
     var u = AuthSupport.authenticatedUser(requestContext(), cc);
     if (u == null) return HttpResponses.ok(Map.of("error", "unauthorized")).withStatus(StatusCodes.UNAUTHORIZED);
     if (!u.isAdmin()) return HttpResponses.ok(Map.of("error", "forbidden")).withStatus(StatusCodes.FORBIDDEN);
-    return SseSupport.stream(() -> Dtos.page(cc.forView().method(AuditLogsView::all).invoke().entries()));
+    var params = ListQueryParams.from(requestContext());
+    return SseSupport.stream(() -> paged(cc.forView().method(AuditLogsView::all).invoke().entries(), params));
   }
 
   @Get("/audit-logs/filters/client-names")

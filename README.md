@@ -215,16 +215,17 @@ like mistakes. `specs/SPEC-001-pocket-id.md` §1 has the reasoning for each in f
   check an authenticator's attestation certificate against a trust store the way a
   high-assurance deployment might.
 - **Admin-UI list views are stream-fed, which the source's own screens never were**
-  (RENDERING R1). Users, groups, clients, both audit-log screens, and the self-service
-  passkey list subscribe to a Server-Sent-Events stream (`SseSupport.java`) instead of
-  fetching once on navigation; a dropped connection is handled by the browser's own
-  `EventSource` retry, whose next frame is always whole current state. Two secondary
-  screens (an admin viewing one user's passkeys, and the signup-token list modal) are not
-  yet wired to a stream — see `pocket-id-port/gui/manifest.json`'s `R1_streaming` note.
-- **Admin list endpoints ignore search/sort/pagination parameters** and always return the
-  whole collection as a single page, unlike the source's server-side paged queries. Invisible
-  at the collection sizes this port's own tests exercise; a real divergence at scale. See
-  SPEC-001 §1's narrowed-list entry for this.
+  (RENDERING R1). Every admin list screen — users, groups, clients, both audit-log screens,
+  signup tokens, and both the self-service and admin per-user passkey lists — subscribes to
+  a Server-Sent-Events stream (`SseSupport.java`) instead of fetching once on navigation; a
+  dropped connection is handled by the browser's own `EventSource` retry, whose next frame is
+  always whole current state.
+- **Admin list endpoints apply search/sort/pagination/filters server-side**
+  (`ListQueryParams.java`) by filtering, sorting and slicing the view's full result in the
+  endpoint, since an Akka View query cannot take a client-supplied sort column, `LIKE`, or
+  `IN` predicate the way the source's own SQL-backed query can. One filter is still inert:
+  the audit-log screen's `location` (country/city) filter has no field to filter by, since
+  geo-IP resolution is the same licensing gap named above.
 - **SCIM push is simplified**: always a full create-or-replace per user rather than the
   source's last-modified diff, and providers sync one at a time rather than up to four
   concurrently.
