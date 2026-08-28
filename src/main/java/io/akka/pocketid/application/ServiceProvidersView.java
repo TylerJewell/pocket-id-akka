@@ -15,12 +15,8 @@ public class ServiceProvidersView extends View {
   public record Row(String id, String oidcClientId, String endpointUrl, String bearerToken,
       Optional<Long> lastSyncedAtMillis, long createdAtMillis) {
 
-    /** {@code s.bearerToken()} is ciphertext here — {@link ServiceProviderEntity}'s persisted
-     * state, pushed to this view straight from {@code updateState}, not the decrypted reply its
-     * own commands hand back to a caller. */
     static Row from(ServiceProvider s) {
-      String plainToken = EncryptionSupport.decrypt(s.bearerToken(), EncryptionSupport.currentMasterKey());
-      return new Row(s.id(), s.oidcClientId(), s.endpointUrl(), plainToken, Optional.ofNullable(s.lastSyncedAtMillis()), s.createdAtMillis());
+      return new Row(s.id(), s.oidcClientId(), s.endpointUrl(), s.bearerToken(), Optional.ofNullable(s.lastSyncedAtMillis()), s.createdAtMillis());
     }
 
     ServiceProvider toProvider() {

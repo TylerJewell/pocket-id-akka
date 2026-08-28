@@ -47,13 +47,12 @@ public final class PocketIdCli {
       case "export" -> export(http, url, session, require(opts, "path"));
       case "import" -> importBackup(http, url, session, require(opts, "path"));
       case "key-rotate" -> keyRotate(http, url, session);
-      case "encryption-key-rotate" -> encryptionKeyRotate(http, url, session, require(opts, "new-key"));
       default -> printUsageAndExit();
     }
   }
 
   private static void printUsageAndExit() {
-    System.err.println("usage: pocket-id-cli <export|import|key-rotate|encryption-key-rotate> --url <base-url> --session <admin-session-id> [--path <zip-path>] [--new-key <key>]");
+    System.err.println("usage: pocket-id-cli <export|import|key-rotate> --url <base-url> --session <admin-session-id> [--path <zip-path>]");
     System.exit(2);
   }
 
@@ -99,20 +98,6 @@ public final class PocketIdCli {
     var response = http.send(request, HttpResponse.BodyHandlers.ofString());
     failIfError(response);
     System.out.println("Key rotated: " + response.body());
-  }
-
-  /** `pocket-id encryption-key-rotate`: re-wraps every {@code EncryptedString}-equivalent value
-   * from the server's current {@code ENCRYPTION_KEY} to {@code newKey}. Same two-step contract as
-   * the source's own command — this only rewraps ciphertext already at rest; the operator still
-   * has to set {@code ENCRYPTION_KEY=newKey} in the environment and restart every instance. */
-  private static void encryptionKeyRotate(HttpClient http, String url, String session, String newKey) throws Exception {
-    var request = HttpRequest.newBuilder(URI.create(url + "/api/application-configuration/rotate-encryption-key"))
-        .header("X-Session-Id", session).header("Content-Type", "application/json")
-        .POST(HttpRequest.BodyPublishers.ofString("{\"newKey\":\"" + newKey + "\"}"))
-        .build();
-    var response = http.send(request, HttpResponse.BodyHandlers.ofString());
-    failIfError(response);
-    System.out.println("Encryption key rotated: " + response.body());
   }
 
   private static void failIfError(HttpResponse<String> response) {

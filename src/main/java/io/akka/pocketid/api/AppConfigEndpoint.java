@@ -13,10 +13,6 @@ import akka.javasdk.http.AbstractHttpEndpoint;
 import akka.javasdk.http.HttpResponses;
 import io.akka.pocketid.application.AppConfigDefaults;
 import io.akka.pocketid.application.AppConfigEntity;
-import io.akka.pocketid.application.EncryptionSupport;
-import io.akka.pocketid.application.ServiceProviderEntity;
-import io.akka.pocketid.application.ServiceProvidersView;
-import io.akka.pocketid.application.SigningKeyEntity;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -83,37 +79,6 @@ public class AppConfigEndpoint extends AbstractHttpEndpoint {
     if (!isAdmin()) return HttpResponses.ok(Map.of("error", "forbidden")).withStatus(StatusCodes.FORBIDDEN);
     var next = io.akka.pocketid.application.SigningKeys.rotate(cc);
     return HttpResponses.ok(Map.of("keyId", next.keyId(), "rotatedAtMillis", next.rotatedAtMillis()));
-  }
-
-  public record RotateEncryptionKeyRequest(String newKey) {}
-
-  /** `pocket-id encryption-key-rotate` — re-wraps every {@code EncryptedString}-equivalent value
-   * (the persisted JWT signing key, every SCIM service provider's bearer token) from the
-   * currently-configured {@code ENCRYPTION_KEY} to {@code newKey}, without changing the secret
-   * values themselves. This only rewraps ciphertext already at rest; the operator still has to
-   * set {@code ENCRYPTION_KEY=newKey} in the process environment and restart every instance
-   * afterward for that new key to be what a fresh {@link EncryptionSupport#currentMasterKey()}
-   * read returns — the same two-step "rotate, then restart" shape as
-   * {@code /rotate-signing-key}, which this port's README's "Where it differs" list already
-   * carries as a single-process caveat. */
-  @Post("/application-configuration/rotate-encryption-key")
-  public HttpResponse rotateEncryptionKey(RotateEncryptionKeyRequest body) {
-    if (!isAdmin()) return HttpResponses.ok(Map.of("error", "forbidden")).withStatus(StatusCodes.FORBIDDEN);
-    if (body.newKey() == null || body.newKey().isBlank()) {
-      return HttpResponses.ok(Map.of("error", "newKey is required")).withStatus(StatusCodes.BAD_REQUEST);
-    }
-    String oldKey = EncryptionSupport.currentMasterKey();
-    cc.forKeyValueEntity("singleton").method(SigningKeyEntity::reencrypt)
-        .invoke(new SigningKeyEntity.ReencryptCmd(oldKey, body.newKey()));
-    var providers = cc.forView().method(ServiceProvidersView::all).invoke();
-    for (var row : providers.items()) {
-      cc.forKeyValueEntity(row.id()).method(ServiceProviderEntity::reencrypt)
-          .invoke(new ServiceProviderEntity.Reencrypt(oldKey, body.newKey()));
-    }
-    return HttpResponses.ok(Map.of(
-        "status", "reencrypted",
-        "serviceProvidersReencrypted", providers.items().size(),
-        "note", "set ENCRYPTION_KEY to the new value and restart every instance"));
   }
 
   @Post("/application-configuration/sync-ldap")
