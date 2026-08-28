@@ -214,12 +214,16 @@ like mistakes. `specs/SPEC-001-pocket-id.md` §1 has the reasoning for each in f
   service's `ComponentClient`. One real narrowing remains: the source's `import` refuses to
   run while *any* Pocket ID instance is connected to its actor cluster; this port's
   `MaintenanceLockEntity` only serializes imports within one running instance, since there is
-  no equivalent cluster-membership concept here to gate on. `encryption-key-rotate` is not
-  implemented — this port never built at-rest encryption for the secrets the source rotates a
-  key for, and building that encryption is a separate, larger capability this pass did not
-  attempt. `key-rotate` is real, persisted rotation (`SigningKeyEntity`) — the JWT signing key
-  used to be generated fresh per process and never survive a restart; it is now durable and a
-  rotation actually takes effect for every token signed after it.
+  no equivalent cluster-membership concept here to gate on. `key-rotate` is real, persisted
+  rotation (`SigningKeyEntity`) — the JWT signing key used to be generated fresh per process and
+  never survive a restart; it is now durable and a rotation actually takes effect for every
+  token signed after it. `encryption-key-rotate` is also implemented: the persisted signing key
+  and every SCIM service provider's bearer token are stored encrypted at rest
+  (`EncryptionSupport`, AES-256-GCM, HKDF-derived from `ENCRYPTION_KEY`), and
+  `POST /api/application-configuration/rotate-encryption-key` (also reachable as the CLI's
+  `encryption-key-rotate` subcommand) re-wraps both under a new master key without changing the
+  secret values themselves — the same "rotate, then set the new env var and restart every
+  instance" two-step contract as the source's own command.
 - **WebAuthn attestation trust-chain/AAGUID-metadata verification is not enforced.**
   Registration and login both perform real signature verification (`webauthn4j`); they do not
   check an authenticator's attestation certificate against a trust store the way a

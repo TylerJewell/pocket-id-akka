@@ -192,6 +192,82 @@ public class AdminSurfaceIntegrationTest extends TestKitSupport {
     assertThat(io.akka.pocketid.application.SigningKeys.verify(componentClient, tokenBeforeRotation)).isNull();
   }
 
+  @Test
+  @SuppressWarnings("unchecked")
+  void encryptionKeyRotateReencryptsTheSigningKeyAndScimTokensWithoutChangingTheirValues() throws Exception {
+    // `pocket-id encryption-key-rotate` — re-wraps every at-rest secret (persisted signing key,
+    // SCIM bearer tokens) under a new master key. Unlike /rotate-signing-key, the underlying
+    // secret values themselves must NOT change: a token signed before the call still verifies,
+    // and a SCIM sync run after the call still authenticates with the same bearer token.
+    //
+    // Rotates to the *same* master key the running process already has (self-rotation) rather
+    // than a genuinely different one: this test shares one running service instance with every
+    // other test in the suite (setupInitialAdmin's cached adminUserId), and the real endpoint's
+    // contract — stated in its own Javadoc — is that ciphertext rewrapped under a different key
+    // is only decryptable again once the operator sets ENCRYPTION_KEY to that new value and
+    // restarts, which this test process cannot do to itself mid-suite. Self-rotation still
+    // exercises the real decrypt-then-reencrypt code path end to end (EncryptionSupportTest
+    // covers the cross-key case in isolation, where corrupting shared state is not a risk).
+    String sessionId = setupInitialAdmin();
+    String sameKey = io.akka.pocketid.application.EncryptionSupport.currentMasterKey();
+
+    var claims = new com.nimbusds.jwt.JWTClaimsSet.Builder().subject("erin").expirationTime(
+        java.util.Date.from(java.time.Instant.now().plusSeconds(60))).build();
+    String tokenBeforeRotation = io.akka.pocketid.application.SigningKeys.sign(componentClient, claims);
+    assertThat(io.akka.pocketid.application.SigningKeys.verify(componentClient, tokenBeforeRotation)).isNotNull();
+
+    var client = httpClient.POST("/api/oidc/clients")
+        .addHeader("X-Session-Id", sessionId)
+        .withRequestBody(new OidcClientAdminEndpoint.CreateClientRequest(
+            "enc-key-rotate-target", "d", false, List.of("https://rp3.example/cb"), List.of()))
+        .responseBodyAs(Map.class).invoke().body();
+    String clientId = (String) client.get("id");
+
+    List<String> receivedAuth = new java.util.concurrent.CopyOnWriteArrayList<>();
+    var stub = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+    stub.createContext("/Users", exchange -> {
+      receivedAuth.add(exchange.getRequestHeaders().getFirst("Authorization"));
+      byte[] response = "{}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+      exchange.sendResponseHeaders(201, response.length);
+      exchange.getResponseBody().write(response);
+      exchange.close();
+    });
+    stub.start();
+    try {
+      String endpointUrl = "http://127.0.0.1:" + stub.getAddress().getPort();
+      var provider = httpClient.POST("/api/scim/service-provider")
+          .addHeader("X-Session-Id", sessionId)
+          .withRequestBody(new java.util.LinkedHashMap<>(Map.of(
+              "oidcClientId", clientId, "endpointUrl", endpointUrl, "bearerToken", "rotate-me-token")))
+          .responseBodyAs(io.akka.pocketid.domain.ServiceProvider.class).invoke().body();
+
+      // ServiceProvidersView updates asynchronously from ServiceProviderEntity; the rotate
+      // endpoint enumerates providers through that view, so it can race the create above.
+      eventually(
+          () -> componentClient.forView().method(io.akka.pocketid.application.ServiceProvidersView::all).invoke().items().size(),
+          size -> size >= 1);
+
+      var forbidden = httpClient.POST("/api/application-configuration/rotate-encryption-key")
+          .withRequestBody(new AppConfigEndpoint.RotateEncryptionKeyRequest(sameKey))
+          .invoke().httpResponse();
+      assertThat(forbidden.status().intValue()).isEqualTo(403);
+
+      var rotated = httpClient.POST("/api/application-configuration/rotate-encryption-key")
+          .addHeader("X-Session-Id", sessionId)
+          .withRequestBody(new AppConfigEndpoint.RotateEncryptionKeyRequest(sameKey))
+          .responseBodyAs(Map.class).invoke().body();
+      assertThat(((Number) rotated.get("serviceProvidersReencrypted")).intValue()).isGreaterThanOrEqualTo(1);
+
+      assertThat(io.akka.pocketid.application.SigningKeys.verify(componentClient, tokenBeforeRotation)).isNotNull();
+
+      httpClient.POST("/api/scim/service-provider/" + provider.id() + "/sync")
+          .addHeader("X-Session-Id", sessionId).invoke();
+      assertThat(receivedAuth).contains("Bearer rotate-me-token");
+    } finally {
+      stub.stop(0);
+    }
+  }
+
   /** RENDERING.md R4/R5 appearance comparison against the running original (gui/manifest.json,
    * 2026-08-27 session) found the login/setup/device screens' background pane blank on the port:
    * app_images_bootstrap.go seeds background.webp/favicon.ico/logoEmail.png into the source's
