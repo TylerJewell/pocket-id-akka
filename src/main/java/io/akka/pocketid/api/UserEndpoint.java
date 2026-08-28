@@ -15,7 +15,6 @@ import akka.javasdk.client.ComponentClient;
 import akka.javasdk.http.AbstractHttpEndpoint;
 import akka.javasdk.http.HttpResponses;
 import akka.util.ByteString;
-import io.akka.pocketid.application.BlobEntity;
 import io.akka.pocketid.application.CustomClaimSetEntity;
 import io.akka.pocketid.application.EmailVerificationEntity;
 import io.akka.pocketid.application.OneTimeAccessTokenEntity;
@@ -234,7 +233,7 @@ public class UserEndpoint extends AbstractHttpEndpoint {
 
   @Get("/users/{id}/profile-picture.png")
   public HttpResponse picture(String id) {
-    var blob = cc.forKeyValueEntity("user-picture:" + id).method(BlobEntity::get).invoke();
+    var blob = io.akka.pocketid.application.FileStorage.get(cc, "user-picture:" + id);
     if (blob.isEmpty()) return HttpResponse.create().withStatus(StatusCodes.NOT_FOUND);
     byte[] bytes = Base64.getDecoder().decode(blob.base64Data());
     ContentType ct = ContentTypes.parse(blob.contentType() == null ? "image/png" : blob.contentType());
@@ -247,7 +246,7 @@ public class UserEndpoint extends AbstractHttpEndpoint {
   public HttpResponse setPicture(String id, PictureUpload body) {
     var forbidden = requireAdmin();
     if (forbidden != null) return forbidden;
-    cc.forKeyValueEntity("user-picture:" + id).method(BlobEntity::put).invoke(new BlobEntity.Put("user-picture:" + id, body.contentType(), body.base64Data()));
+    io.akka.pocketid.application.FileStorage.put(cc, "user-picture:" + id, body.contentType(), body.base64Data());
     return HttpResponses.ok(java.util.Map.of("status", "updated"));
   }
 
@@ -255,7 +254,7 @@ public class UserEndpoint extends AbstractHttpEndpoint {
   public HttpResponse deletePicture(String id) {
     var forbidden = requireAdmin();
     if (forbidden != null) return forbidden;
-    cc.forKeyValueEntity("user-picture:" + id).method(BlobEntity::delete).invoke();
+    io.akka.pocketid.application.FileStorage.delete(cc, "user-picture:" + id);
     return HttpResponses.ok(java.util.Map.of("status", "deleted"));
   }
 
@@ -263,7 +262,7 @@ public class UserEndpoint extends AbstractHttpEndpoint {
   public HttpResponse setMyPicture(PictureUpload body) {
     var u = me();
     if (u == null) return HttpResponses.ok(err("unauthorized")).withStatus(StatusCodes.UNAUTHORIZED);
-    cc.forKeyValueEntity("user-picture:" + u.id()).method(BlobEntity::put).invoke(new BlobEntity.Put("user-picture:" + u.id(), body.contentType(), body.base64Data()));
+    io.akka.pocketid.application.FileStorage.put(cc, "user-picture:" + u.id(), body.contentType(), body.base64Data());
     return HttpResponses.ok(java.util.Map.of("status", "updated"));
   }
 
@@ -271,7 +270,7 @@ public class UserEndpoint extends AbstractHttpEndpoint {
   public HttpResponse deleteMyPicture() {
     var u = me();
     if (u == null) return HttpResponses.ok(err("unauthorized")).withStatus(StatusCodes.UNAUTHORIZED);
-    cc.forKeyValueEntity("user-picture:" + u.id()).method(BlobEntity::delete).invoke();
+    io.akka.pocketid.application.FileStorage.delete(cc, "user-picture:" + u.id());
     return HttpResponses.ok(java.util.Map.of("status", "deleted"));
   }
 
@@ -308,6 +307,8 @@ public class UserEndpoint extends AbstractHttpEndpoint {
 
   @Post("/users/me/send-email-verification")
   public HttpResponse sendEmailVerification() {
+    var limited = RateLimitSupport.check(cc, requestContext(), "send-email-verification");
+    if (limited != null) return limited;
     var u = me();
     if (u == null) return HttpResponses.ok(err("unauthorized")).withStatus(StatusCodes.UNAUTHORIZED);
     if (u.email() == null || u.email().isEmpty()) return HttpResponses.ok(err("no email on file")).withStatus(StatusCodes.BAD_REQUEST);
@@ -322,6 +323,8 @@ public class UserEndpoint extends AbstractHttpEndpoint {
 
   @Post("/users/me/verify-email")
   public HttpResponse verifyEmail(VerifyEmailRequest body) {
+    var limited = RateLimitSupport.check(cc, requestContext(), "verify-email");
+    if (limited != null) return limited;
     var u = me();
     if (u == null) return HttpResponses.ok(err("unauthorized")).withStatus(StatusCodes.UNAUTHORIZED);
     var outcome = cc.forKeyValueEntity(u.id()).method(EmailVerificationEntity::verify)

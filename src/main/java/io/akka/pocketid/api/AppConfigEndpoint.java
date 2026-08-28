@@ -13,7 +13,6 @@ import akka.javasdk.http.AbstractHttpEndpoint;
 import akka.javasdk.http.HttpResponses;
 import io.akka.pocketid.application.AppConfigDefaults;
 import io.akka.pocketid.application.AppConfigEntity;
-import io.akka.pocketid.application.BlobEntity;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -72,6 +71,16 @@ public class AppConfigEndpoint extends AbstractHttpEndpoint {
     return HttpResponses.ok(Map.of("status", "sent"));
   }
 
+  /** `pocket-id key-rotate` — replaces the persisted JWT signing key. See
+   * {@link io.akka.pocketid.application.SigningKeyEntity}'s class doc for why this is a real
+   * rotation (persisted, survives a restart) rather than a per-process no-op. */
+  @Post("/application-configuration/rotate-signing-key")
+  public HttpResponse rotateSigningKey() {
+    if (!isAdmin()) return HttpResponses.ok(Map.of("error", "forbidden")).withStatus(StatusCodes.FORBIDDEN);
+    var next = io.akka.pocketid.application.SigningKeys.rotate(cc);
+    return HttpResponses.ok(Map.of("keyId", next.keyId(), "rotatedAtMillis", next.rotatedAtMillis()));
+  }
+
   @Post("/application-configuration/sync-ldap")
   public HttpResponse syncLdap() {
     if (!isAdmin()) return HttpResponses.ok(Map.of("error", "forbidden")).withStatus(StatusCodes.FORBIDDEN);
@@ -106,7 +115,7 @@ public class AppConfigEndpoint extends AbstractHttpEndpoint {
   @Get("/application-images/{name}")
   public HttpResponse getImage(String name) {
     if (!IMAGE_NAMES.contains(name)) return HttpResponse.create().withStatus(StatusCodes.NOT_FOUND);
-    var blob = cc.forKeyValueEntity("app-image:" + name).method(BlobEntity::get).invoke();
+    var blob = io.akka.pocketid.application.FileStorage.get(cc, "app-image:" + name);
     if (blob.isEmpty()) {
       // "never uploaded" gets the bundled default; "explicitly deleted" (BlobEntity's own
       // tombstone) does not -- matching the source's one deletable bundled image (the
@@ -134,7 +143,7 @@ public class AppConfigEndpoint extends AbstractHttpEndpoint {
   public HttpResponse putImage(String name, ImageUpload body) {
     if (!IMAGE_NAMES.contains(name)) return HttpResponse.create().withStatus(StatusCodes.NOT_FOUND);
     if (!isAdmin()) return HttpResponses.ok(Map.of("error", "forbidden")).withStatus(StatusCodes.FORBIDDEN);
-    cc.forKeyValueEntity("app-image:" + name).method(BlobEntity::put).invoke(new BlobEntity.Put("app-image:" + name, body.contentType(), body.base64Data()));
+    io.akka.pocketid.application.FileStorage.put(cc, "app-image:" + name, body.contentType(), body.base64Data());
     return HttpResponses.ok(Map.of("status", "updated"));
   }
 
@@ -142,7 +151,7 @@ public class AppConfigEndpoint extends AbstractHttpEndpoint {
   public HttpResponse deleteImage(String name) {
     if (!IMAGE_NAMES.contains(name)) return HttpResponse.create().withStatus(StatusCodes.NOT_FOUND);
     if (!isAdmin()) return HttpResponses.ok(Map.of("error", "forbidden")).withStatus(StatusCodes.FORBIDDEN);
-    cc.forKeyValueEntity("app-image:" + name).method(BlobEntity::delete).invoke();
+    io.akka.pocketid.application.FileStorage.delete(cc, "app-image:" + name);
     return HttpResponses.ok(Map.of("status", "deleted"));
   }
 }

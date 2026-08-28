@@ -63,6 +63,7 @@ public final class AppConfigDefaults {
     m.put("webauthnAllowSyncedPasskeys", "true");
     m.put("webauthnAuthenticatorAttachment", "");
     m.put("cimdUrlAllowlist", "[]");
+    m.put("disableRateLimiting", "false");
     return m;
   }
 }

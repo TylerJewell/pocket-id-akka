@@ -43,6 +43,11 @@ public class ApiKeyEntity extends KeyValueEntity<ApiKeyRecord> {
     return effects().reply(currentState());
   }
 
+  /** Backup-restore's equivalent for one API key record — see {@link UserEntity#restore}. */
+  public Effect<ApiKeyRecord> restore(ApiKeyRecord state) {
+    return effects().updateState(state).thenReply(state);
+  }
+
   public Effect<String> delete() {
     return effects().deleteEntity().thenReply("ok");
   }

@@ -106,7 +106,7 @@ public class OidcEndpoint extends AbstractHttpEndpoint {
 
   @Get("/.well-known/jwks.json")
   public Map<String, Object> jwks() {
-    return Map.of("keys", List.of(SigningKeys.publicJwk().toJSONObject()));
+    return Map.of("keys", List.of(SigningKeys.publicJwk(componentClient).toJSONObject()));
   }
 
   @Get("/.well-known/oauth-authorization-server")
@@ -323,7 +323,7 @@ public class OidcEndpoint extends AbstractHttpEndpoint {
         .issueTime(Date.from(now)).expirationTime(Date.from(expiry))
         .claim("client_id", clientId).claim("scope", q.getString("scope").orElse(""))
         .build();
-    String accessToken = SigningKeys.sign(claims);
+    String accessToken = SigningKeys.sign(componentClient, claims);
     return HttpResponses.ok(new TokenResponse(accessToken, "Bearer", ACCESS_TOKEN_TTL_MILLIS / 1000, null, null));
   }
 
@@ -433,7 +433,7 @@ public class OidcEndpoint extends AbstractHttpEndpoint {
         .issueTime(Date.from(now)).expirationTime(Date.from(expiry))
         .claim("client_id", clientId).claim("scope", String.join(" ", scopes))
         .build();
-    String accessToken = SigningKeys.sign(accessClaims);
+    String accessToken = SigningKeys.sign(componentClient, accessClaims);
 
     var idClaimsBuilder = new JWTClaimsSet.Builder()
         .issuer(ISSUER).subject(user.id()).audience(clientId)
@@ -442,7 +442,7 @@ public class OidcEndpoint extends AbstractHttpEndpoint {
       if (!"sub".equals(entry.getKey())) idClaimsBuilder.claim(entry.getKey(), entry.getValue());
     }
     if (nonce != null) idClaimsBuilder.claim("nonce", nonce);
-    String idToken = SigningKeys.sign(idClaimsBuilder.build());
+    String idToken = SigningKeys.sign(componentClient, idClaimsBuilder.build());
 
     return new TokenResponse(accessToken, "Bearer", ACCESS_TOKEN_TTL_MILLIS / 1000, idToken, refreshToken);
   }
@@ -485,7 +485,7 @@ public class OidcEndpoint extends AbstractHttpEndpoint {
       return errorJson(StatusCodes.UNAUTHORIZED, "invalid_client", "Client authentication failed.");
     }
     String token = q.getString("token").orElse("");
-    JWTClaimsSet claims = SigningKeys.verify(token);
+    JWTClaimsSet claims = SigningKeys.verify(componentClient, token);
     if (claims != null) {
       try {
         boolean active = claims.getExpirationTime() != null && claims.getExpirationTime().after(new Date());
@@ -544,7 +544,7 @@ public class OidcEndpoint extends AbstractHttpEndpoint {
     // rule 17: only redirect to a client-registered post-logout URI, resolved from id_token_hint's aud
     boolean trusted = false;
     if (idTokenHint != null) {
-      JWTClaimsSet claims = SigningKeys.verify(idTokenHint);
+      JWTClaimsSet claims = SigningKeys.verify(componentClient, idTokenHint);
       if (claims != null) {
         try {
           String clientId = claims.getAudience().isEmpty() ? null : claims.getAudience().get(0);
@@ -644,7 +644,7 @@ public class OidcEndpoint extends AbstractHttpEndpoint {
     if (bearer == null || !bearer.startsWith("Bearer ")) {
       return unauthorized();
     }
-    JWTClaimsSet claims = SigningKeys.verify(bearer.substring("Bearer ".length()));
+    JWTClaimsSet claims = SigningKeys.verify(componentClient, bearer.substring("Bearer ".length()));
     if (claims == null) return unauthorized();
     try {
       if (claims.getExpirationTime() == null || claims.getExpirationTime().before(new Date())) {
@@ -713,6 +713,64 @@ public class OidcEndpoint extends AbstractHttpEndpoint {
   private OidcClient clientById(String clientId) {
     if (clientId == null || clientId.isEmpty()) return null;
     var client = componentClient.forKeyValueEntity(clientId).method(OidcClientEntity::get).invoke();
-    return client.clientId() == null ? null : client;
+    if (client.clientId() != null) return client;
+    if (io.akka.pocketid.application.CimdSupport.looksLikeCimdUrl(clientId)) {
+      try {
+        return resolveCimdClient(clientId, false);
+      } catch (RuntimeException e) {
+        return null; // unreachable/invalid CIMD document reads the same as an unknown client
+      }
+    }
+    return null;
+  }
+
+  /** `RefreshMetadataClient`'s equivalent — an admin- or client-triggered re-fetch that bypasses
+   * the cache TTL, used after the operator updates their own metadata document. */
+  @Post("/api/oidc/clients/{url}/refresh-cimd-metadata")
+  public HttpResponse refreshClientMetadata(String url) {
+    String decoded = java.net.URLDecoder.decode(url, StandardCharsets.UTF_8);
+    if (!io.akka.pocketid.application.CimdSupport.looksLikeCimdUrl(decoded)) {
+      return HttpResponses.ok(Map.of("error", "Not a CIMD client")).withStatus(StatusCodes.BAD_REQUEST);
+    }
+    try {
+      var resolved = resolveCimdClient(decoded, true);
+      if (resolved == null) return HttpResponses.ok(Map.of("error", "URL not allowlisted")).withStatus(StatusCodes.FORBIDDEN);
+      return HttpResponses.ok(Map.of("status", "refreshed", "clientId", resolved.clientId()));
+    } catch (Exception e) {
+      return HttpResponses.ok(Map.of("error", "CIMD fetch failed: " + e.getMessage())).withStatus(StatusCodes.BAD_GATEWAY);
+    }
+  }
+
+  /** Resolves a {@code client_id} that is itself an HTTPS URL against the admin-configured
+   * allowlist ({@code cimdUrlAllowlist}), then either serves the cached document (if fresh and
+   * {@code forceRefresh} is false) or fetches and re-validates it. Never persists to
+   * {@link OidcClientEntity} — a CIMD client is re-resolved on every use rather than becoming a
+   * managed client an admin would see in the clients list, matching the source's treatment of it
+   * as dynamically-registered rather than admin-provisioned. */
+  private OidcClient resolveCimdClient(String url, boolean forceRefresh) {
+    var config = componentClient.forKeyValueEntity("singleton").method(io.akka.pocketid.application.AppConfigEntity::get).invoke();
+    var allowlist = io.akka.pocketid.application.CimdSupport.parseAllowlist(config.get("cimdUrlAllowlist"));
+    if (!io.akka.pocketid.application.CimdSupport.isAllowlisted(allowlist, url)) return null;
+    io.akka.pocketid.application.CimdSupport.assertNotLinkLocal(url);
+
+    long now = Instant.now().toEpochMilli();
+    if (!forceRefresh) {
+      var cached = componentClient.forKeyValueEntity(url).method(io.akka.pocketid.application.CimdCacheEntity::get).invoke();
+      if (!cached.isEmpty() && io.akka.pocketid.application.CimdSupport.isFresh(cached.fetchedAtMillis(), now)) {
+        try {
+          return io.akka.pocketid.application.CimdSupport.validate(url, cached.rawJson(), cached.fetchedAtMillis()).client();
+        } catch (Exception ignoredStaleCacheFallsThroughToRefetch) {
+          // falls through to a live re-fetch below
+        }
+      }
+    }
+    try {
+      var fetched = io.akka.pocketid.application.CimdSupport.fetchAndValidate(url, now);
+      componentClient.forKeyValueEntity(url).method(io.akka.pocketid.application.CimdCacheEntity::put)
+          .invoke(new io.akka.pocketid.application.CimdCacheEntity.Put(url, fetched.rawJson(), now));
+      return fetched.client();
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
   }
 }

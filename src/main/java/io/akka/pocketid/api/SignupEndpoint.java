@@ -65,6 +65,8 @@ public class SignupEndpoint extends AbstractHttpEndpoint {
 
   @Post("/signup")
   public HttpResponse signup(SignupRequest body) {
+    var limited = RateLimitSupport.check(cc, requestContext(), "signup");
+    if (limited != null) return limited;
     var config = cc.forKeyValueEntity("singleton").method(AppConfigEntity::get).invoke();
     boolean open = "open".equals(config.get("allowUserSignups"));
     SignupTokenEntity.class.getSimpleName(); // no-op, keeps import used if refactored
@@ -127,6 +129,8 @@ public class SignupEndpoint extends AbstractHttpEndpoint {
 
   @Post("/one-time-access-token/{token}")
   public HttpResponse exchangeToken(String token) {
+    var limited = RateLimitSupport.check(cc, requestContext(), "one-time-access-token");
+    if (limited != null) return limited;
     var outcome = cc.forKeyValueEntity(token).method(OneTimeAccessTokenEntity::consume).invoke(Instant.now().toEpochMilli());
     if (outcome.result() != OneTimeAccessTokenEntity.ConsumeResult.OK) {
       return HttpResponses.ok(Map.of("error", "Invalid or expired token.")).withStatus(StatusCodes.BAD_REQUEST);
@@ -138,6 +142,8 @@ public class SignupEndpoint extends AbstractHttpEndpoint {
 
   @Post("/one-time-access-email")
   public HttpResponse requestOneTimeEmail(OneTimeEmailRequest body) {
+    var limited = RateLimitSupport.check(cc, requestContext(), "one-time-access-email");
+    if (limited != null) return limited;
     var config = cc.forKeyValueEntity("singleton").method(AppConfigEntity::get).invoke();
     if (!Boolean.parseBoolean(config.getOrDefault("emailOneTimeAccessAsUnauthenticatedEnabled", "false"))) {
       return HttpResponses.ok(Map.of("error", "This feature is disabled.")).withStatus(StatusCodes.FORBIDDEN);

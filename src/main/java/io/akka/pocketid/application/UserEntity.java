@@ -34,6 +34,18 @@ public class UserEntity extends KeyValueEntity<User> {
     return new User(null, null, null, false, null, null, null, false, null, false, null, List.of(), 0, 0);
   }
 
+  /** `pocket-id import`'s equivalent for one user record: writes the full state a backup
+   * captured, rather than re-deriving it through {@link #create}'s narrower invariants (which
+   * cannot express an already-verified email, a non-default locale, or an original creation
+   * timestamp). Overwrites in place if the id already exists -- {@code deleteEntity()} is
+   * permanent in this SDK (AK-00205: "cannot be changed after deletion"), so an import that
+   * restores the same id an admin is calling it from must overwrite rather than delete-then-
+   * recreate; {@link io.akka.pocketid.api.BackupEndpoint} only hard-deletes ids the bundle does
+   * not include. */
+  public Effect<User> restore(User state) {
+    return effects().updateState(state).thenReply(state);
+  }
+
   public Effect<User> create(Create cmd) {
     if (currentState().id() != null) {
       return effects().error("User already exists");
