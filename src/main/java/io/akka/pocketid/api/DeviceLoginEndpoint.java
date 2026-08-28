@@ -27,8 +27,6 @@ public class DeviceLoginEndpoint extends AbstractHttpEndpoint {
 
   @Post("/requests")
   public HttpResponse createRequest() {
-    var limited = RateLimitSupport.check(cc, requestContext(), "device-login-create");
-    if (limited != null) return limited;
     String code = randomCode();
     long expiresAt = Instant.now().toEpochMilli() + TTL_MILLIS;
     cc.forKeyValueEntity(code).method(DeviceLoginEntity::create).invoke(new DeviceLoginEntity.Create(code, expiresAt));
@@ -37,8 +35,6 @@ public class DeviceLoginEndpoint extends AbstractHttpEndpoint {
 
   @Post("/requests/{code}/exchange")
   public HttpResponse exchange(String code) {
-    var limited = RateLimitSupport.check(cc, requestContext(), "device-login-exchange");
-    if (limited != null) return limited;
     var state = cc.forKeyValueEntity(code).method(DeviceLoginEntity::get).invoke();
     if (state.isEmpty()) return HttpResponses.ok(Map.of("status", "not_found")).withStatus(StatusCodes.NOT_FOUND);
     if (Instant.now().toEpochMilli() >= state.expiresAtMillis()) {
@@ -59,8 +55,6 @@ public class DeviceLoginEndpoint extends AbstractHttpEndpoint {
 
   @Post("/verification")
   public HttpResponse verification(VerificationRequest body) {
-    var limited = RateLimitSupport.check(cc, requestContext(), "device-login-verification");
-    if (limited != null) return limited;
     var u = AuthSupport.authenticatedUser(requestContext(), cc);
     if (u == null) return HttpResponses.ok(Map.of("error", "unauthorized")).withStatus(StatusCodes.UNAUTHORIZED);
     var state = cc.forKeyValueEntity(body.code()).method(DeviceLoginEntity::get).invoke();

@@ -76,8 +76,6 @@ public class WebAuthnEndpoint extends AbstractHttpEndpoint {
 
   @Get("/login/start")
   public HttpResponse loginStart() {
-    var limited = RateLimitSupport.check(cc, requestContext(), "webauthn-login");
-    if (limited != null) return limited;
     String sessionId = UUID.randomUUID().toString();
     String challenge = WebAuthnSupport.randomChallengeBase64();
     long expiresAt = Instant.now().toEpochMilli() + CHALLENGE_TTL_MILLIS;
@@ -167,8 +165,6 @@ public class WebAuthnEndpoint extends AbstractHttpEndpoint {
    * now, used before a sensitive operation. Reuses the login ceremony's verification. */
   @Post("/reauthenticate")
   public HttpResponse reauthenticate(ReauthRequest body) {
-    var limited = RateLimitSupport.check(cc, requestContext(), "webauthn-reauthenticate");
-    if (limited != null) return limited;
     var u = AuthSupport.authenticatedUser(requestContext(), cc);
     if (u == null) return HttpResponses.ok(Map.of("error", "unauthorized")).withStatus(StatusCodes.UNAUTHORIZED);
     var challengeState = cc.forKeyValueEntity(body.challengeSessionId()).method(WebAuthnChallengeEntity::get).invoke();

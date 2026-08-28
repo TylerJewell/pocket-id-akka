@@ -42,7 +42,7 @@ public final class AuthSupport {
     }
     String bearer = ctx.requestHeader("Authorization").map(HttpHeader::value).orElse(null);
     if (bearer != null && bearer.startsWith("Bearer ")) {
-      var claims = SigningKeys.verify(cc, bearer.substring("Bearer ".length()));
+      var claims = SigningKeys.verify(bearer.substring("Bearer ".length()));
       if (claims != null) {
         try {
           if (claims.getExpirationTime() != null && claims.getExpirationTime().after(new java.util.Date())) {

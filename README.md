@@ -194,32 +194,22 @@ The record of every question, decision, and where the time went is in
 Everything not listed here behaves the same way on purpose, including the parts that look
 like mistakes. `specs/SPEC-001-pocket-id.md` §1 has the reasoning for each in full.
 
-- **S3 file-storage backend**: implemented (`FileStorage`), selected via `S3_BUCKET` etc.,
-  verified against a real MinIO container this session; falls back to the entity-backed
-  ("database") storage when unset, which remains the default.
-- **CIMD (Client ID Metadata Document) dynamic client registration**: implemented
-  (`CimdSupport`, `OidcEndpoint.resolveCimdClient`, a manual refresh endpoint), gated by an
-  admin allowlist and a link-local/multicast SSRF guard, verified against a real throwaway
-  local HTTP server standing in for "the client's own metadata host." The `apis`/
-  permission-grant resource built on top of CIMD in the source remains out.
+- **No S3 file-storage backend.** Profile pictures, app images, and client logos are held as
+  entity bytes (a KeyValueEntity blob) rather than local disk or S3 — the source's own
+  abstraction supports either interchangeably; this port implements the disk-equivalent case
+  and does not stand up a real S3-compatible target to check the other by running against it.
+- **No CIMD (Client ID Metadata Document) dynamic client registration, and no `apis`/
+  permission-grant resource built on top of it.** Correctness there depends on fetching
+  another party's hosted document, which nothing in this port's control can check by running.
 - **No geo-IP resolution on audit-log entries.** The IP address is recorded; resolving it to a
   country/city needs a licensed MaxMind GeoLite2 database this environment has no license for.
-- **Rate limiting**: implemented in full — all twelve of the source's named per-(policy,
-  client-IP) token-bucket policies (`RateLimitPolicies`, `RateLimitEntity`), wired onto the
-  same endpoints the source rate-limits, skippable via `disableRateLimiting`.
-- **ZIP backup/export/import and the `key-rotate`/`export`/`import` CLI subcommands**:
-  implemented as an admin HTTP surface (`BackupEndpoint`) plus a standalone CLI
-  (`io.akka.pocketid.cli.PocketIdCli`) that drives it over HTTP rather than opening a database
-  file directly — forced by this SDK's entities being reachable only through a running
-  service's `ComponentClient`. One real narrowing remains: the source's `import` refuses to
-  run while *any* Pocket ID instance is connected to its actor cluster; this port's
-  `MaintenanceLockEntity` only serializes imports within one running instance, since there is
-  no equivalent cluster-membership concept here to gate on. `encryption-key-rotate` is not
-  implemented — this port never built at-rest encryption for the secrets the source rotates a
-  key for, and building that encryption is a separate, larger capability this pass did not
-  attempt. `key-rotate` is real, persisted rotation (`SigningKeyEntity`) — the JWT signing key
-  used to be generated fresh per process and never survive a restart; it is now durable and a
-  rotation actually takes effect for every token signed after it.
+- **Rate limiting is a lighter, undifferentiated guard**, not the source's named per-route
+  policy table (login vs. signup vs. one-time-access each get their own bucket and rate in the
+  source). The property — abuse resistance exists — is kept; the exact shape is not.
+- **No ZIP backup/export/import, and no standalone CLI subcommands** (`key-rotate`,
+  `encryption-key-rotate`, `export`, `import`, `healthcheck` as a separate binary mode). An
+  Akka service is HTTP-first; `GET /healthz` and `GET /api/version/current` are the genuine
+  equivalents that exist, and the rest is named here rather than silently missing.
 - **WebAuthn attestation trust-chain/AAGUID-metadata verification is not enforced.**
   Registration and login both perform real signature verification (`webauthn4j`); they do not
   check an authenticator's attestation certificate against a trust store the way a

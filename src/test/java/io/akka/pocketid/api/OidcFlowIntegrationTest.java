@@ -205,7 +205,7 @@ public class OidcFlowIntegrationTest extends TestKitSupport {
     // "offline_access" was not requested, so no refresh token (rule 10)
     assertThat(tokens.refresh_token()).isNull();
 
-    JWTClaimsSet idClaims = SigningKeys.verify(componentClient, tokens.id_token());
+    JWTClaimsSet idClaims = SigningKeys.verify(tokens.id_token());
     assertThat(idClaims).isNotNull();
     assertThat(idClaims.getSubject()).isEqualTo("alice");
     assertThat(idClaims.getAudience()).contains(CLIENT_ID);

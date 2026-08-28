@@ -53,11 +53,6 @@ public class UserGroupEntity extends KeyValueEntity<UserGroup> {
     return effects().reply(currentState());
   }
 
-  /** Backup-restore's equivalent for one group record — see {@link UserEntity#restore}. */
-  public Effect<UserGroup> restore(UserGroup state) {
-    return effects().updateState(state).thenReply(state);
-  }
-
   public Effect<String> delete() {
     return effects().deleteEntity().thenReply("ok");
   }

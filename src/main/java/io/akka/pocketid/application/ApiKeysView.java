@@ -45,11 +45,6 @@ public class ApiKeysView extends View {
     return queryResult();
   }
 
-  @Query("SELECT * AS items FROM api_keys_view")
-  public QueryEffect<Keys> all() {
-    return queryResult();
-  }
-
   @Query("SELECT * AS items FROM api_keys_view WHERE hashedKey = :hashedKey")
   public QueryEffect<Keys> byHashedKey(String hashedKey) {
     return queryResult();

@@ -163,35 +163,6 @@ public class AdminSurfaceIntegrationTest extends TestKitSupport {
     assertThat(reset.get("appName")).isEqualTo("Pocket ID");
   }
 
-  @Test
-  @SuppressWarnings("unchecked")
-  void keyRotateReplacesTheSigningKeyAndInvalidatesTokensSignedByThePreviousOne() throws Exception {
-    // `pocket-id key-rotate`'s equivalent (SigningKeyEntity) — non-admin is refused, an admin's
-    // rotation changes the published JWKS kid, and a token minted before rotation no longer
-    // verifies against the new key (SigningKeys.verify uses whichever key is currently persisted).
-    String sessionId = setupInitialAdmin();
-
-    var before = httpClient.GET("/.well-known/jwks.json").responseBodyAs(Map.class).invoke().body();
-    String kidBefore = (String) ((List<Map<String, Object>>) before.get("keys")).get(0).get("kid");
-
-    var claims = new com.nimbusds.jwt.JWTClaimsSet.Builder().subject("alice").expirationTime(
-        java.util.Date.from(java.time.Instant.now().plusSeconds(60))).build();
-    String tokenBeforeRotation = io.akka.pocketid.application.SigningKeys.sign(componentClient, claims);
-    assertThat(io.akka.pocketid.application.SigningKeys.verify(componentClient, tokenBeforeRotation)).isNotNull();
-
-    var forbidden = httpClient.POST("/api/application-configuration/rotate-signing-key").invoke().httpResponse();
-    assertThat(forbidden.status().intValue()).isEqualTo(403);
-
-    httpClient.POST("/api/application-configuration/rotate-signing-key")
-        .addHeader("X-Session-Id", sessionId).invoke();
-
-    var after = httpClient.GET("/.well-known/jwks.json").responseBodyAs(Map.class).invoke().body();
-    String kidAfter = (String) ((List<Map<String, Object>>) after.get("keys")).get(0).get("kid");
-    assertThat(kidAfter).isNotEqualTo(kidBefore);
-
-    assertThat(io.akka.pocketid.application.SigningKeys.verify(componentClient, tokenBeforeRotation)).isNull();
-  }
-
   /** RENDERING.md R4/R5 appearance comparison against the running original (gui/manifest.json,
    * 2026-08-27 session) found the login/setup/device screens' background pane blank on the port:
    * app_images_bootstrap.go seeds background.webp/favicon.ico/logoEmail.png into the source's

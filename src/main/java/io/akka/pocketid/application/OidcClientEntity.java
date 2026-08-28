@@ -76,11 +76,6 @@ public class OidcClientEntity extends KeyValueEntity<OidcClient> {
     return effects().reply(currentState());
   }
 
-  /** Backup-restore's equivalent for one client record — see {@link UserEntity#restore}. */
-  public Effect<OidcClient> restore(OidcClient state) {
-    return effects().updateState(state).thenReply(state);
-  }
-
   public Effect<String> delete() {
     return effects().deleteEntity().thenReply("ok");
   }

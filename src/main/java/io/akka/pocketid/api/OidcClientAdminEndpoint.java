@@ -11,6 +11,7 @@ import akka.javasdk.annotations.http.Put;
 import akka.javasdk.client.ComponentClient;
 import akka.javasdk.http.AbstractHttpEndpoint;
 import akka.javasdk.http.HttpResponses;
+import io.akka.pocketid.application.BlobEntity;
 import io.akka.pocketid.application.OidcClientEntity;
 import io.akka.pocketid.application.OidcClientsView;
 import io.akka.pocketid.domain.OidcClient;
@@ -167,7 +168,7 @@ public class OidcClientAdminEndpoint extends AbstractHttpEndpoint {
   public HttpResponse getLogo(String id) {
     var c = cc.forKeyValueEntity(id).method(OidcClientEntity::get).invoke();
     if (c.clientId() == null || c.logoDataUrl() == null) return HttpResponse.create().withStatus(StatusCodes.NOT_FOUND);
-    var blob = io.akka.pocketid.application.FileStorage.get(cc, "client-logo:" + id);
+    var blob = cc.forKeyValueEntity("client-logo:" + id).method(BlobEntity::get).invoke();
     if (blob.isEmpty()) return HttpResponse.create().withStatus(StatusCodes.NOT_FOUND);
     byte[] bytes = Base64.getDecoder().decode(blob.base64Data());
     var ct = akka.http.javadsl.model.ContentTypes.parse(blob.contentType() == null ? "image/png" : blob.contentType());
@@ -180,7 +181,7 @@ public class OidcClientAdminEndpoint extends AbstractHttpEndpoint {
   public HttpResponse setLogo(String id, LogoUpload body) {
     var forbidden = requireAdmin();
     if (forbidden != null) return forbidden;
-    io.akka.pocketid.application.FileStorage.put(cc, "client-logo:" + id, body.contentType(), body.base64Data());
+    cc.forKeyValueEntity("client-logo:" + id).method(BlobEntity::put).invoke(new BlobEntity.Put("client-logo:" + id, body.contentType(), body.base64Data()));
     var updated = cc.forKeyValueEntity(id).method(OidcClientEntity::setLogo).invoke(new OidcClientEntity.SetLogo("stored", Instant.now().toEpochMilli()));
     return HttpResponses.ok(updated);
   }
@@ -189,7 +190,7 @@ public class OidcClientAdminEndpoint extends AbstractHttpEndpoint {
   public HttpResponse deleteLogo(String id) {
     var forbidden = requireAdmin();
     if (forbidden != null) return forbidden;
-    io.akka.pocketid.application.FileStorage.delete(cc, "client-logo:" + id);
+    cc.forKeyValueEntity("client-logo:" + id).method(BlobEntity::delete).invoke();
     var updated = cc.forKeyValueEntity(id).method(OidcClientEntity::setLogo).invoke(new OidcClientEntity.SetLogo(null, Instant.now().toEpochMilli()));
     return HttpResponses.ok(updated);
   }
