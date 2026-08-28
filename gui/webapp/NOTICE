@@ -1,0 +1,9 @@
+The files in this directory are from pocket-id/pocket-id
+(https://github.com/pocket-id/pocket-id).
+
+Copyright 2024, Elias Schneider
+Licensed under BSD-2-Clause. The full text is in LICENSE beside this file.
+
+They are reused here verbatim and unmodified, per this harness's RENDERING.md R3.
+Nothing in the parent repository relicenses them; the Apache License at the root
+of this repository does not apply to them.

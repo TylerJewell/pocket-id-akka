@@ -6,21 +6,23 @@ This repository holds two kinds of code and they are not under the same licence.
 
 Everything outside the vendored trees listed below was written for this project. It is a
 clean-room implementation: written against a specification derived by running
-[pocket-id/pocket-id](https://github.com/pocket-id/pocket-id) and recording what it does, not by translating
-its source. See `../pocket-id-port/specs/SPEC-001-pocket-id.md` for the rules it was built to, and `ACKNOWLEDGEMENTS.md` for the
+[pocket-id/pocket-id](https://github.com/pocket-id/pocket-id) and recording what it does, not by translating its
+source. See `../pocket-id-port/specs/SPEC-001-pocket-id.md` for the rules it was built to, and `ACKNOWLEDGEMENTS.md` for the
 places any text was carried across and why.
 
-It is licensed under the Apache License 2.0. See `LICENSE`.
+It is licensed under the Apache License 2.0, Copyright 2026 Tyler Jewell. See `LICENSE`
+and `NOTICE`.
 
 ## The interface — BSD-2-Clause, as pocket-id/pocket-id licensed it
 
 - `gui/webapp/`
+- `src/main/resources/default-app-images/`
 - `src/main/resources/static-resources/`
 
-That code was written by the pocket-id/pocket-id project and is shipped here **verbatim**, reused
-rather than rebuilt, per this harness's RENDERING.md R3. It remains under the licence its
-authors chose, unmodified, in `LICENSE-pocket-id` and beside the code itself. Nothing
-about this repository relicenses it.
+That code was written by the pocket-id/pocket-id project, Copyright 2024, Elias Schneider, and is shipped
+here **verbatim**, reused rather than rebuilt, per this harness's RENDERING.md R3. It
+remains under the licence its authors chose, unmodified, in `LICENSE-pocket-id` and beside
+the code itself. Nothing about this repository relicenses it.
 
 ## Why the split
 
